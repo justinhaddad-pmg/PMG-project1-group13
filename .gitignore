@@ -1,0 +1,16 @@
+# Secrets and local config
+.env
+config.local.json
+
+# Generated / large data files
+US_youtube_trending_data.csv
+US_youtube_trending_data.csv.zip
+US_youtube_trending_data.zip
+historical_data.json
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

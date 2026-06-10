@@ -408,7 +408,7 @@ const FALLBACK_TOPICS = {
 // ═══════════════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════════════
-let apiKey = 'AIzaSyC--ZGSByLCLuX6-UU5ULb9rAQ1H3DGeRU';
+let apiKey = '';
 let mode = 'realtime';
 let pillars = PILLAR_META.map(p => ({ ...p, score: FALLBACK_SCORES.realtime[p.label] }));
 let displayScores = pillars.map(p => p.score);
@@ -826,6 +826,23 @@ document.getElementById('dateInput').addEventListener('change', e => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+//  LOCAL CONFIG  (config.local.json, generated from .env — not in git)
+// ═══════════════════════════════════════════════════════════════════════
+async function loadLocalConfig() {
+  try {
+    const res = await fetch('./config.local.json');
+    if (!res.ok) return;
+    const cfg = await res.json();
+    if (cfg.youtubeApiKey) apiKey = cfg.youtubeApiKey.trim();
+  } catch {}
+}
+
+function restoreApiKey() {
+  if (!apiKey) apiKey = localStorage.getItem('yt_api_key') || '';
+  if (apiKey) document.getElementById('apiBanner').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  API KEY UI
 // ═══════════════════════════════════════════════════════════════════════
 function initApiKey(key) {
@@ -846,11 +863,6 @@ document.getElementById('apiKeyInput').addEventListener('keydown', e => {
   }
 });
 
-// Restore saved key
-if (apiKey) {
-  document.getElementById('apiBanner').classList.add('hidden');
-}
-
 // Refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
   if (mode === 'realtime' && apiKey) fetchYouTubeScores();
@@ -866,6 +878,8 @@ setInterval(() => { if (mode === 'realtime' && apiKey) fetchYouTubeScores(); }, 
 (async () => {
   buildSliders();
   draw();
+  await loadLocalConfig();
+  restoreApiKey();
   await tryLoadHistoricalFile();
   if (apiKey && mode === 'realtime') {
     fetchYouTubeScores();

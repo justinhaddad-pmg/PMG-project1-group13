@@ -2,9 +2,17 @@ import os
 import zipfile
 import sys
 
-# Set Kaggle credentials
-os.environ['KAGGLE_USERNAME'] = "justinhaddad"
-os.environ['KAGGLE_KEY'] = "KGAT_8e7a3b3a73fda9c8d824b3fbc3e0aefe"
+from env import load_env
+
+if not load_env():
+    print("❌  No .env file found. Copy .env.example to .env and add your credentials.")
+    sys.exit(1)
+
+username = os.environ.get("KAGGLE_USERNAME", "").strip()
+api_key = os.environ.get("KAGGLE_KEY", "").strip()
+if not username or not api_key:
+    print("❌  Missing KAGGLE_USERNAME or KAGGLE_KEY in .env")
+    sys.exit(1)
 
 try:
     import kaggle
