@@ -13,8 +13,15 @@ PILLARS = ["Politics", "Sports", "Entertainment", "Sci & Tech", "Business", "Lif
 GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 WIKI_TOP_BASE = "https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access"
 YT_BASE = "https://www.googleapis.com/youtube/v3/videos"
+YT_SEARCH_BASE = "https://www.googleapis.com/youtube/v3/search"
 CACHE_FILE = "historical_cache.json"
+LIVE_CACHE_FILE = "youtube_live_cache.json"
 RANGE_CACHE = None
+YOUTUBE_LIVE_LOOKBACK_HOURS = 36
+LIVE_CACHE = None
+LIVE_CACHE_TTL_SECONDS = 3600
+LIVE_STALE_CACHE_SECONDS = 86400
+YOUTUBE_SEARCHES_PER_REFRESH = 3
 
 PILLAR_KEYWORDS = {
     "Politics": ["election", "congress", "senate", "president", "white house", "supreme court", "policy", "vote", "protest", "government", "trump", "biden"],
@@ -34,6 +41,28 @@ CAT_TO_PILLAR = {
     28: "Sci & Tech", 27: "Sci & Tech", 20: "Entertainment",
     26: "Lifestyle", 22: "Lifestyle", 19: "Lifestyle",
 }
+
+PILLAR_TO_YT_CATEGORY = {
+    "Politics": "25",
+    "Sports": "17",
+    "Entertainment": "24",
+    "Sci & Tech": "28",
+    "Lifestyle": "26",
+}
+
+YOUTUBE_CORE_QUERIES = [
+    "NBA Finals",
+    "business news",
+]
+
+YOUTUBE_ROTATING_QUERIES = [
+    "NBA highlights",
+    "breaking news",
+    "sports highlights",
+    "music video",
+    "tech news",
+    "stock market",
+]
 
 GDELT_QUERY = " OR ".join(
     f'"{term}"' if " " in term else term
@@ -136,9 +165,13 @@ def gdelt_signal(date_str=None):
             continue
         raw[pillar] += 1
         if len(topics[pillar]) < 5:
+            domain = article.get("domain") or "News"
             topics[pillar].append({
                 "name": title[:60] + ("..." if len(title) > 60 else ""),
-                "heat": article.get("domain") or "News",
+                "heat": domain,
+                "source": domain,
+                "url": article.get("url", ""),
+                "description": f"News coverage from {domain}.",
             })
     return {"scores": normalize(raw), "topics": topics}
 
@@ -164,9 +197,13 @@ def wiki_signal(date_str):
             weighted_views = views * weight
             raw[pillar] += math.log10(weighted_views + 1)
             if len(topics[pillar]) < 5:
+                readable_title = title.replace("_", " ")
                 topics[pillar].append({
-                    "name": title.replace("_", " "),
+                    "name": readable_title,
                     "heat": f"{round(weighted_views / 1000)}k views",
+                    "source": "Wikipedia",
+                    "url": f"https://en.wikipedia.org/wiki/{title}",
+                    "description": f"Wikipedia pageviews for {readable_title} during this date window.",
                 })
     return {"scores": normalize(raw), "topics": topics}
 
@@ -181,11 +218,137 @@ def youtube_key():
         return ""
 
 
+def parse_youtube_datetime(value):
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+
+
+def format_views(value):
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M views"
+    if value >= 1_000:
+        return f"{round(value / 1_000)}k views"
+    return f"{value} views"
+
+
+def format_age(published_at, now):
+    hours = max(0, round((now - published_at).total_seconds() / 3600))
+    return f"{hours}h old"
+
+
+def short_text(value, limit=180):
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:limit] + ("..." if len(text) > limit else "")
+
+
+def youtube_item_score(item, now):
+    stats = item.get("statistics", {})
+    views = int(stats.get("viewCount", 0) or 0)
+    likes = int(stats.get("likeCount", 0) or 0)
+    comments = int(stats.get("commentCount", 0) or 0)
+    published_at = parse_youtube_datetime(item.get("snippet", {}).get("publishedAt"))
+    engagement = (likes + comments) / views if views else 0
+    age_hours = ((now - published_at).total_seconds() / 3600) if published_at else YOUTUBE_LIVE_LOOKBACK_HOURS
+    recency_boost = 1 + max(0, (YOUTUBE_LIVE_LOOKBACK_HOURS - age_hours) / YOUTUBE_LIVE_LOOKBACK_HOURS)
+    return views * (1 + engagement) * recency_boost
+
+
+def youtube_pillar(item):
+    snippet = item.get("snippet", {})
+    title = snippet.get("title", "")
+    cat_id = int(snippet.get("categoryId", 0) or 0)
+    title_lower = title.lower()
+    if any(k in title_lower for k in PILLAR_KEYWORDS["Business"]):
+        return "Business"
+    return classify(title) or CAT_TO_PILLAR.get(cat_id)
+
+
+def youtube_video_details(ids, key):
+    items = []
+    for index in range(0, len(ids), 50):
+        params = {
+            "part": "snippet,statistics",
+            "id": ",".join(ids[index:index + 50]),
+            "key": key,
+        }
+        data = read_json_url(f"{YT_BASE}?{urlencode(params)}")
+        items.extend(data.get("items", []))
+    return items
+
+
+def youtube_live_queries(now):
+    remaining = max(0, YOUTUBE_SEARCHES_PER_REFRESH - len(YOUTUBE_CORE_QUERIES))
+    if remaining == 0:
+        return YOUTUBE_CORE_QUERIES[:YOUTUBE_SEARCHES_PER_REFRESH]
+    slot = int(now.timestamp() // LIVE_CACHE_TTL_SECONDS)
+    rotating = [
+        YOUTUBE_ROTATING_QUERIES[(slot + offset) % len(YOUTUBE_ROTATING_QUERIES)]
+        for offset in range(remaining)
+    ]
+    return [*YOUTUBE_CORE_QUERIES, *rotating]
+
+
+def youtube_recent_search_ids(key, cutoff, now):
+    ids = []
+    published_after = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    searches = [{"q": query} for query in youtube_live_queries(now)]
+    for search in searches:
+        params = {
+            "part": "snippet",
+            "type": "video",
+            "order": "viewCount",
+            "regionCode": "US",
+            "relevanceLanguage": "en",
+            "publishedAfter": published_after,
+            "maxResults": "10",
+            "key": key,
+        }
+        params.update(search)
+        data = read_json_url(f"{YT_SEARCH_BASE}?{urlencode(params)}")
+        ids.extend(
+            item.get("id", {}).get("videoId")
+            for item in data.get("items", [])
+            if item.get("id", {}).get("videoId")
+        )
+    return ids
+
+
 def youtube_signal():
     key = youtube_key()
     if not key:
         return None
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(hours=YOUTUBE_LIVE_LOOKBACK_HOURS)
     raw, topics = blank_raw(), empty_topics()
+    candidates = {pillar: [] for pillar in PILLARS}
+    seen = set()
+
+    def add_item(item):
+        video_id = item.get("id")
+        if not video_id or video_id in seen:
+            return
+        seen.add(video_id)
+        snippet = item.get("snippet", {})
+        published_at = parse_youtube_datetime(snippet.get("publishedAt"))
+        if not published_at or published_at < cutoff:
+            return
+        title = snippet.get("title", "")
+        pillar = youtube_pillar(item)
+        if not pillar:
+            return
+        score = youtube_item_score(item, now)
+        raw[pillar] += score
+        views = int(item.get("statistics", {}).get("viewCount", 0) or 0)
+        candidates[pillar].append({
+            "name": title[:60] + ("..." if len(title) > 60 else ""),
+            "heat": f"{format_views(views)} · {format_age(published_at, now)}",
+            "source": snippet.get("channelTitle", "YouTube"),
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+            "description": short_text(snippet.get("description")),
+            "score": score,
+        })
+
     page_token = None
     for _ in range(2):
         params = {
@@ -199,23 +362,27 @@ def youtube_signal():
             params["pageToken"] = page_token
         data = read_json_url(f"{YT_BASE}?{urlencode(params)}")
         for item in data.get("items", []):
-            title = item.get("snippet", {}).get("title", "")
-            cat_id = int(item.get("snippet", {}).get("categoryId", 0) or 0)
-            stats = item.get("statistics", {})
-            views = int(stats.get("viewCount", 0) or 0)
-            likes = int(stats.get("likeCount", 0) or 0)
-            comments = int(stats.get("commentCount", 0) or 0)
-            score = views * (1 + ((likes + comments) / views if views else 0))
-            pillar = "Business" if any(k in title.lower() for k in PILLAR_KEYWORDS["Business"]) else CAT_TO_PILLAR.get(cat_id) or classify(title)
-            if not pillar:
-                continue
-            raw[pillar] += score
-            topics[pillar].append({"name": title[:60] + ("..." if len(title) > 60 else ""), "heat": "Video"})
+            add_item(item)
         page_token = data.get("nextPageToken")
         if not page_token:
             break
+
+    recent_ids = list(dict.fromkeys(youtube_recent_search_ids(key, cutoff, now)))
+    for item in youtube_video_details(recent_ids, key):
+        add_item(item)
+
     for pillar in PILLARS:
-        topics[pillar] = topics[pillar][:5]
+        top = sorted(candidates[pillar], key=lambda item: item["score"], reverse=True)[:5]
+        topics[pillar] = [
+            {
+                "name": item["name"],
+                "heat": item["heat"],
+                "source": item["source"],
+                "url": item["url"],
+                "description": item["description"],
+            }
+            for item in top
+        ]
     return {"scores": normalize(raw), "topics": topics}
 
 
@@ -240,6 +407,41 @@ def merge_topics(*topic_sets):
     return merged
 
 
+def wikipedia_url(title):
+    return f"https://en.wikipedia.org/wiki/{str(title or '').replace(' ', '_')}"
+
+
+def normalize_topic(topic, fallback_source=""):
+    item = dict(topic or {})
+    name = item.get("name", "Untitled topic")
+    source = item.get("source") or fallback_source
+    item["name"] = name
+    item["source"] = source
+    item.setdefault("heat", "")
+    if source == "Wikipedia":
+        item.setdefault("url", wikipedia_url(name))
+        item.setdefault("description", f"High Wikipedia pageview attention for {name}.")
+    else:
+        item.setdefault("url", "")
+        item.setdefault("description", f"Trending item from {source or 'the historical signal set'}.")
+    return item
+
+
+def normalize_result(result):
+    if not isinstance(result, dict):
+        return result
+    fallback_source = result.get("source", "")
+    topics = result.get("topics") or {}
+    normalized = {}
+    for pillar in PILLARS:
+        normalized[pillar] = [
+            normalize_topic(topic, fallback_source)
+            for topic in topics.get(pillar, [])
+        ]
+    result["topics"] = normalized
+    return result
+
+
 def load_cache():
     try:
         with open(CACHE_FILE, "r") as f:
@@ -253,6 +455,27 @@ def save_cache(cache):
     with open(tmp, "w") as f:
         json.dump(cache, f)
     os.replace(tmp, CACHE_FILE)
+
+
+def load_live_cache():
+    try:
+        with open(LIVE_CACHE_FILE, "r") as f:
+            cached = json.load(f)
+        cached["fetched_at"] = datetime.fromisoformat(cached["fetched_at"]).astimezone(UTC)
+        return cached
+    except Exception:
+        return None
+
+
+def save_live_cache(cache):
+    payload = {
+        "fetched_at": cache["fetched_at"].isoformat(),
+        "result": cache["result"],
+    }
+    tmp = f"{LIVE_CACHE_FILE}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(payload, f)
+    os.replace(tmp, LIVE_CACHE_FILE)
 
 
 def probe_wiki_available(date_str):
@@ -286,54 +509,74 @@ def latest_available_historical_date():
 
 
 def pulse(mode, date_str):
+    global LIVE_CACHE
     cache = load_cache() if mode == "historical" else None
     if cache is not None and date_str in cache:
-        return cache[date_str]
+        return normalize_result(cache[date_str])
 
     warnings = []
-    try:
-        gdelt = gdelt_signal(None if mode == "live" else date_str)
-    except Exception as exc:
-        warnings.append(f"GDELT unavailable: {exc}")
-        gdelt = None
-    try:
-        wiki = wiki_signal(date_str)
-    except Exception as exc:
-        warnings.append(f"Wikipedia unavailable: {exc}")
-        wiki = None
-    try:
-        yt = youtube_signal() if mode == "live" else None
-    except Exception as exc:
-        warnings.append(f"YouTube unavailable: {exc}")
-        yt = None
 
-    if not gdelt and not wiki and not yt:
-        raise RuntimeError("; ".join(warnings) or "No data sources available")
-
-    scores = blend([
-        {"data": gdelt, "weight": 45 if yt else 60},
-        {"data": wiki, "weight": 30 if yt else 40},
-        {"data": yt, "weight": 25},
-    ])
-    result = {
-        "scores": scores,
-        "topics": merge_topics(
+    if mode == "live":
+        now = datetime.now(UTC)
+        if LIVE_CACHE is None:
+            LIVE_CACHE = load_live_cache()
+        if LIVE_CACHE and (now - LIVE_CACHE["fetched_at"]).total_seconds() < LIVE_CACHE_TTL_SECONDS:
+            return LIVE_CACHE["result"]
+        try:
+            yt = youtube_signal()
+        except Exception as exc:
+            warnings.append(f"YouTube unavailable: {exc}")
+            yt = None
+        if not yt and LIVE_CACHE and (now - LIVE_CACHE["fetched_at"]).total_seconds() < LIVE_STALE_CACHE_SECONDS:
+            cached = dict(LIVE_CACHE["result"])
+            cached["warnings"] = [*cached.get("warnings", []), *warnings, "Using last successful YouTube refresh"]
+            return cached
+        if not yt:
+            raise RuntimeError("; ".join(warnings) or "YouTube live data unavailable")
+        scores = yt["scores"]
+        topics = yt["topics"]
+        source = "YouTube"
+    else:
+        try:
+            gdelt = gdelt_signal(date_str)
+        except Exception as exc:
+            warnings.append(f"GDELT unavailable: {exc}")
+            gdelt = None
+        try:
+            wiki = wiki_signal(date_str)
+        except Exception as exc:
+            warnings.append(f"Wikipedia unavailable: {exc}")
+            wiki = None
+        if not gdelt and not wiki:
+            raise RuntimeError("; ".join(warnings) or "Historical data unavailable")
+        scores = blend([
+            {"data": gdelt, "weight": 60},
+            {"data": wiki, "weight": 40},
+        ])
+        topics = merge_topics(
             gdelt["topics"] if gdelt else None,
             wiki["topics"] if wiki else None,
-            yt["topics"] if yt else None,
-        ),
-        "source": " + ".join([
-            name for name, data in [("GDELT", gdelt), ("Wikipedia", wiki), ("YouTube", yt)]
+        )
+        source = " + ".join([
+            name for name, data in [("GDELT", gdelt), ("Wikipedia", wiki)]
             if data
-        ]),
+        ])
+
+    result = {
+        "scores": scores,
+        "topics": topics,
+        "source": source,
         "warnings": warnings,
     }
 
     if cache is not None:
         cache[date_str] = result
         save_cache(cache)
+    elif mode == "live":
+        LIVE_CACHE = {"fetched_at": datetime.now(UTC), "result": result}
+        save_live_cache(LIVE_CACHE)
 
-    return result
+    return normalize_result(result)
 
 
 class Handler(SimpleHTTPRequestHandler):
