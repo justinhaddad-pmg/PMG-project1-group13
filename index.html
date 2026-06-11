@@ -4,166 +4,217 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>The Cultural Pulse — PMG Group 13</title>
-  <meta name="description" content="Real-time radar visualization of what's dominating the American cultural conversation, powered by YouTube trending data.">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta name="description" content="Real-time and historical radar visualization of what's dominating the American cultural conversation.">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --bg: #07110f;
+      --surface: rgba(250, 255, 248, 0.08);
+      --surface-strong: rgba(250, 255, 248, 0.12);
+      --border: rgba(221, 244, 229, 0.14);
+      --text: #edf7ef;
+      --muted: #8fa69b;
+      --faint: #5d7369;
+      --accent: #70e1ad;
+      --accent-2: #f5c766;
+      --danger: #ff6b6b;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Inter', sans-serif;
-      background: #06080f;
-      color: #e0e6f0;
+      font-family: 'Manrope', sans-serif;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(112, 225, 173, 0.15), transparent 32rem),
+        radial-gradient(circle at 80% 16%, rgba(245, 199, 102, 0.12), transparent 28rem),
+        linear-gradient(135deg, #07110f 0%, #0b1715 46%, #111413 100%);
+      color: var(--text);
       min-height: 100vh;
       overflow-x: hidden;
     }
 
-    /* ── Ambient glow ───────────────────────────────── */
     .bg-glow {
       position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+      background-image:
+        linear-gradient(rgba(237,247,239,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(237,247,239,0.035) 1px, transparent 1px);
+      background-size: 52px 52px;
+      mask-image: linear-gradient(to bottom, black, transparent 82%);
     }
-    .bg-glow::before, .bg-glow::after {
-      content: ''; position: absolute; border-radius: 50%;
-      filter: blur(120px); opacity: 0.13;
-    }
-    .bg-glow::before {
-      width: 600px; height: 600px; background: #6366f1;
-      top: -100px; left: -150px;
-      animation: floatA 18s ease-in-out infinite;
-    }
-    .bg-glow::after {
-      width: 500px; height: 500px; background: #ec4899;
-      bottom: -80px; right: -100px;
-      animation: floatB 22s ease-in-out infinite;
-    }
-    @keyframes floatA { 0%,100%{transform:translate(0,0)} 50%{transform:translate(80px,60px)} }
-    @keyframes floatB { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-60px,-80px)} }
 
-    /* ── Layout ─────────────────────────────────────── */
     .app {
       position: relative; z-index: 1;
       display: flex; flex-direction: column; align-items: center;
-      padding: 2.5rem 1.5rem 3rem;
-      max-width: 1160px; margin: 0 auto;
+      padding: 2rem 1.5rem 3rem;
+      max-width: 1180px; margin: 0 auto;
     }
 
-    header { text-align: center; margin-bottom: 1.5rem; }
+    header { text-align: center; margin-bottom: 1.2rem; }
     h1 {
-      font-size: 2.5rem; font-weight: 800; letter-spacing: -0.02em;
-      background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.2rem, 5vw, 4.3rem);
+      font-weight: 700;
+      letter-spacing: 0;
+      line-height: 0.95;
+      color: var(--text);
+      text-shadow: 0 16px 48px rgba(112, 225, 173, 0.18);
     }
-    .subtitle { font-size: 0.95rem; color: #64748b; font-weight: 300; margin-top: 0.3rem; }
+    .subtitle {
+      font-size: 0.98rem;
+      color: var(--muted);
+      font-weight: 500;
+      margin-top: 0.8rem;
+    }
 
-    /* ── API Key Banner ─────────────────────────────── */
     .api-banner {
-      width: 100%; max-width: 820px;
-      background: rgba(250, 204, 21, 0.06);
-      border: 1px solid rgba(250, 204, 21, 0.2);
-      border-radius: 1rem;
+      width: 100%; max-width: 900px;
+      background: rgba(245, 199, 102, 0.10);
+      border: 1px solid rgba(245, 199, 102, 0.24);
+      border-radius: 8px;
       padding: 1rem 1.25rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1rem;
       display: flex; align-items: center; gap: 0.75rem;
       flex-wrap: wrap;
     }
     .api-banner .banner-icon { font-size: 1.2rem; flex-shrink: 0; }
-    .api-banner .banner-text { font-size: 0.82rem; color: #a3a000; flex: 1; min-width: 200px; }
-    .api-banner .banner-text a { color: #facc15; text-decoration: underline; }
+    .api-banner .banner-text { font-size: 0.84rem; color: #e6c979; flex: 1; min-width: 200px; }
+    .api-banner .banner-text a { color: #ffe19b; text-decoration: underline; }
     .api-key-form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .api-key-form input {
       font-family: inherit; font-size: 0.82rem;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 0.5rem; padding: 0.4rem 0.75rem;
-      color: #e0e6f0; outline: none; width: 260px;
+      background: rgba(7,17,15,0.55);
+      border: 1px solid rgba(245,199,102,0.22);
+      border-radius: 8px; padding: 0.5rem 0.75rem;
+      color: var(--text); outline: none; width: 260px;
     }
-    .api-key-form input:focus { border-color: rgba(250,204,21,0.5); }
+    .api-key-form input:focus { border-color: rgba(245,199,102,0.65); }
     .api-key-form button {
       font-family: inherit; font-size: 0.82rem; font-weight: 600;
-      background: rgba(250,204,21,0.15); color: #facc15;
-      border: 1px solid rgba(250,204,21,0.25);
-      border-radius: 0.5rem; padding: 0.4rem 1rem; cursor: pointer;
+      background: var(--accent-2); color: #16201b;
+      border: 1px solid rgba(245,199,102,0.35);
+      border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;
       transition: background 0.2s;
     }
-    .api-key-form button:hover { background: rgba(250,204,21,0.25); }
+    .api-key-form button:hover { background: #ffd983; }
     .api-banner.hidden { display: none; }
 
-    /* ── Mode toggle ────────────────────────────────── */
+    .control-panel {
+      width: min(900px, 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.35rem;
+      padding: 0.7rem;
+      background: rgba(7, 17, 15, 0.48);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 12px 38px rgba(0,0,0,0.18);
+      backdrop-filter: blur(18px);
+    }
+
     .mode-toggle {
-      display: flex; gap: 0; margin-bottom: 1.5rem;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 0.75rem; overflow: hidden;
+      display: flex; gap: 0.25rem;
+      background: rgba(237,247,239,0.06);
+      border: 1px solid rgba(237,247,239,0.10);
+      border-radius: 8px; overflow: hidden;
+      padding: 0.25rem;
     }
     .mode-btn {
-      padding: 0.6rem 1.5rem;
-      font-family: inherit; font-size: 0.85rem; font-weight: 500;
-      color: #64748b; background: transparent; border: none; cursor: pointer;
+      padding: 0.58rem 1rem;
+      font-family: inherit; font-size: 0.84rem; font-weight: 800;
+      color: var(--muted); background: transparent; border: none; cursor: pointer;
+      border-radius: 6px;
       transition: all 0.3s ease;
     }
-    .mode-btn.active { background: rgba(96,165,250,0.15); color: #93c5fd; }
-    .mode-btn:hover:not(.active) { color: #94a3b8; }
+    .mode-btn.active { background: var(--accent); color: #07110f; box-shadow: 0 10px 24px rgba(112,225,173,0.22); }
+    .mode-btn:hover:not(.active) { color: var(--text); background: rgba(237,247,239,0.06); }
 
-    /* ── Date picker ────────────────────────────────── */
     .date-picker {
-      display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem;
+      display: flex; align-items: center; gap: 0.65rem;
       opacity: 0; height: 0; overflow: hidden;
       transition: opacity 0.4s ease, height 0.4s ease, margin 0.4s ease;
     }
-    .date-picker.visible { opacity: 1; height: 42px; margin-bottom: 1.5rem; }
-    .date-picker label { font-size: 0.8rem; color: #64748b; }
+    .date-picker.visible { opacity: 1; height: 38px; }
+    .date-picker label { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
     .date-picker input[type="date"] {
-      font-family: inherit; font-size: 0.85rem;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 0.5rem; padding: 0.4rem 0.75rem;
-      color: #e0e6f0; outline: none;
+      font-family: inherit; font-size: 0.84rem; font-weight: 700;
+      background: rgba(237,247,239,0.07);
+      border: 1px solid rgba(237,247,239,0.13);
+      border-radius: 8px; padding: 0.5rem 0.7rem;
+      color: var(--text); outline: none;
     }
-    .date-picker input[type="date"]:focus { border-color: rgba(96,165,250,0.5); }
+    .date-picker input[type="date"]:focus { border-color: rgba(112,225,173,0.6); }
 
-    /* ── Status bar ─────────────────────────────────── */
     .status-bar {
       display: flex; align-items: center; gap: 0.6rem;
-      margin-bottom: 1.25rem; font-size: 0.78rem; color: #475569;
+      font-size: 0.78rem; color: var(--muted);
+      min-height: 38px;
+      padding: 0 0.35rem;
     }
     .status-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: #475569;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--faint);
       transition: background 0.4s;
     }
-    .status-dot.live { background: #4ade80; animation: pulse-dot 2s infinite; }
-    .status-dot.loading { background: #facc15; animation: pulse-dot 0.8s infinite; }
-    .status-dot.error { background: #f87171; }
+    .status-dot.live { background: var(--accent); animation: pulse-dot 2s infinite; }
+    .status-dot.loading { background: var(--accent-2); animation: pulse-dot 0.8s infinite; }
+    .status-dot.error { background: var(--danger); }
     @keyframes pulse-dot {
       0%,100%{opacity:1} 50%{opacity:0.4}
     }
     .status-bar .refresh-btn {
-      background: none; border: none; color: #475569; cursor: pointer;
-      font-size: 0.78rem; padding: 0 0.4rem;
+      background: rgba(237,247,239,0.06);
+      border: 1px solid rgba(237,247,239,0.10);
+      border-radius: 8px;
+      color: var(--muted); cursor: pointer;
+      font-size: 0.78rem; font-weight: 800;
+      padding: 0.45rem 0.7rem;
       transition: color 0.2s;
     }
-    .status-bar .refresh-btn:hover { color: #94a3b8; }
+    .status-bar .refresh-btn:hover { color: var(--text); border-color: rgba(112,225,173,0.32); }
 
-    /* ── Main grid ──────────────────────────────────── */
     .main-grid {
-      display: flex; gap: 2rem; width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 1.1rem; width: 100%;
       align-items: flex-start; justify-content: center;
-      flex-wrap: wrap;
     }
 
-    /* ── Chart card ─────────────────────────────────── */
     .chart-card {
-      background: rgba(255,255,255,0.025);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 1.5rem;
-      padding: 2rem;
+      background:
+        linear-gradient(180deg, rgba(250,255,248,0.10), rgba(250,255,248,0.035)),
+        rgba(7,17,15,0.64);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: clamp(1rem, 3vw, 2rem);
       position: relative;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px);
+      overflow: hidden;
+      min-width: 0;
     }
-    canvas#radar { display: block; cursor: crosshair; }
+    .chart-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(112,225,173,0.10), transparent 42%, rgba(245,199,102,0.08));
+      pointer-events: none;
+    }
+    canvas#radar {
+      position: relative;
+      display: block;
+      cursor: crosshair;
+      margin: 0 auto;
+      max-width: 100%;
+      height: auto;
+    }
 
-    /* ── Loading overlay ────────────────────────────── */
     .loading-overlay {
-      position: absolute; inset: 0; border-radius: 1.5rem;
-      background: rgba(6,8,15,0.75);
+      position: absolute; inset: 0; border-radius: 8px;
+      background: rgba(7,17,15,0.76);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 0.75rem;
       opacity: 0; pointer-events: none;
@@ -174,20 +225,19 @@
     .loading-overlay.show { opacity: 1; pointer-events: all; }
     .spinner {
       width: 36px; height: 36px;
-      border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: #60a5fa;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loading-overlay span { font-size: 0.85rem; color: #64748b; }
+    .loading-overlay span { font-size: 0.85rem; color: var(--muted); }
 
-    /* ── Tooltip ────────────────────────────────────── */
     .tooltip {
       position: absolute; pointer-events: none;
-      background: rgba(10,14,26,0.96);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 0.75rem; padding: 0.75rem 1rem;
+      background: rgba(13,23,20,0.96);
+      border: 1px solid rgba(237,247,239,0.16);
+      border-radius: 8px; padding: 0.75rem 1rem;
       font-size: 0.8rem; backdrop-filter: blur(16px);
       opacity: 0; transform: translateY(6px);
       transition: opacity 0.15s, transform 0.15s;
@@ -196,83 +246,96 @@
     .tooltip.show { opacity: 1; transform: translateY(0); }
     .tooltip .tt-label { font-weight: 600; margin-bottom: 0.3rem; }
     .tooltip .tt-score { font-size: 1.3rem; font-weight: 700; }
-    .tooltip .tt-sub { font-size: 0.72rem; color: #64748b; margin-top: 0.15rem; }
+    .tooltip .tt-sub { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
     .tooltip .tt-bar {
       height: 4px; border-radius: 2px; margin-top: 0.5rem;
-      background: rgba(255,255,255,0.08);
+      background: rgba(237,247,239,0.10);
     }
     .tooltip .tt-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease; }
 
     /* ── Side panel ─────────────────────────────────── */
-    .side-panel { width: 320px; display: flex; flex-direction: column; gap: 1rem; }
+    .side-panel { width: 100%; display: flex; flex-direction: column; gap: 1rem; }
 
     .panel-card {
-      background: rgba(255,255,255,0.025);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 1rem; padding: 1.25rem;
+      background: rgba(7,17,15,0.60);
+      border: 1px solid var(--border);
+      border-radius: 8px; padding: 1.1rem;
+      box-shadow: 0 18px 58px rgba(0,0,0,0.22);
+      backdrop-filter: blur(18px);
     }
     .panel-card h3 {
-      font-size: 0.72rem; font-weight: 600;
+      font-size: 0.74rem; font-weight: 800;
       text-transform: uppercase; letter-spacing: 0.08em;
-      color: #475569; margin-bottom: 0.75rem;
+      color: var(--faint); margin-bottom: 0.85rem;
     }
 
-    /* ── Slider rows ────────────────────────────────── */
     .slider-row {
-      display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.55rem;
+      display: grid;
+      grid-template-columns: 10px 92px minmax(72px, 1fr) 34px;
+      align-items: center; gap: 0.55rem; margin-bottom: 0.65rem;
     }
-    .slider-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .slider-row .label { font-size: 0.76rem; color: #94a3b8; width: 80px; flex-shrink: 0; }
+    .slider-row .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 16px currentColor; }
+    .slider-row .label { font-size: 0.78rem; color: #c9d8d0; font-weight: 700; }
     .slider-row input[type="range"] {
       flex: 1; height: 4px;
       -webkit-appearance: none; appearance: none;
-      background: rgba(255,255,255,0.08); border-radius: 2px; outline: none;
+      background: rgba(237,247,239,0.11); border-radius: 2px; outline: none;
     }
     .slider-row input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      border-radius: 50%; background: #60a5fa; border: 2px solid #06080f;
+      -webkit-appearance: none; width: 15px; height: 15px;
+      border-radius: 50%; background: var(--text); border: 3px solid #0a1512;
       cursor: pointer; transition: transform 0.15s;
+      box-shadow: 0 0 0 1px rgba(237,247,239,0.18);
     }
-    .slider-row input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
-    .slider-row .val { font-size: 0.78rem; font-weight: 600; width: 26px; text-align: right; color: #cbd5e1; }
+    .slider-row input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.18); }
+    .slider-row .val { font-size: 0.82rem; font-weight: 800; text-align: right; color: var(--text); }
 
-    /* ── Drill-down ─────────────────────────────────── */
     .drilldown.empty .dd-content-inner { opacity: 0.4; }
     .dd-header {
       display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;
     }
     .dd-header .dd-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .dd-header .dd-title { font-size: 0.95rem; font-weight: 600; }
+    .dd-header .dd-title { font-size: 0.95rem; font-weight: 800; }
     .dd-header .dd-score { margin-left: auto; font-size: 1.1rem; font-weight: 700; }
     .dd-header .dd-source {
-      font-size: 0.68rem; color: #475569;
+      font-size: 0.68rem; color: var(--faint);
       margin-left: auto; text-align: right; line-height: 1.3;
     }
     .dd-topic {
       display: flex; align-items: flex-start; gap: 0.6rem;
-      padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+      padding: 0.58rem 0; border-bottom: 1px solid rgba(237,247,239,0.07);
     }
     .dd-topic:last-child { border-bottom: none; }
-    .dd-rank { font-size: 0.7rem; font-weight: 600; color: #475569; width: 16px; flex-shrink: 0; padding-top: 1px; }
-    .dd-topic-name { font-size: 0.8rem; color: #cbd5e1; flex: 1; line-height: 1.35; }
+    .dd-rank { font-size: 0.7rem; font-weight: 800; color: var(--faint); width: 16px; flex-shrink: 0; padding-top: 1px; }
+    .dd-topic-name { font-size: 0.8rem; color: #dbe8e0; flex: 1; line-height: 1.35; }
     .dd-topic-heat {
-      font-size: 0.7rem; font-weight: 500; color: #64748b;
+      font-size: 0.7rem; font-weight: 700; color: var(--muted);
       padding: 0.15rem 0.45rem;
-      background: rgba(255,255,255,0.04);
-      border-radius: 0.3rem; flex-shrink: 0; white-space: nowrap;
+      background: rgba(237,247,239,0.07);
+      border-radius: 6px; flex-shrink: 0; white-space: nowrap;
     }
-    .dd-empty-msg { font-size: 0.8rem; color: #475569; font-style: italic; text-align: center; padding: 1rem 0; }
+    .dd-empty-msg { font-size: 0.8rem; color: var(--faint); font-style: italic; text-align: center; padding: 1rem 0; }
 
-    /* ── Data source badge ──────────────────────────── */
     .data-source {
-      font-size: 0.7rem; color: #334155; text-align: center; margin-top: 1rem;
+      font-size: 0.72rem; color: var(--faint); text-align: center; margin-top: 1rem;
     }
-    .data-source a { color: #475569; }
+    .data-source a { color: var(--muted); }
 
-    @media (max-width: 820px) {
-      .main-grid { flex-direction: column; align-items: center; }
-      .side-panel { width: 100%; max-width: 520px; }
-      h1 { font-size: 1.8rem; }
+    @media (max-width: 920px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .side-panel { max-width: 620px; margin: 0 auto; }
+    }
+
+    @media (max-width: 620px) {
+      .app { padding: 1.25rem 1rem 2rem; }
+      .control-panel { justify-content: stretch; }
+      .mode-toggle, .date-picker, .status-bar { width: 100%; }
+      .mode-btn { flex: 1; padding-inline: 0.5rem; }
+      .date-picker.visible { height: auto; }
+      .date-picker { justify-content: space-between; }
+      .date-picker input[type="date"] { max-width: 170px; }
+      .status-bar { justify-content: space-between; }
+      .slider-row { grid-template-columns: 10px 88px minmax(68px, 1fr) 34px; }
     }
   </style>
 </head>
@@ -284,15 +347,15 @@
 
   <header>
     <h1>The Cultural Pulse</h1>
-    <p class="subtitle">What's dominating the national conversation — powered by YouTube trending data</p>
+    <p class="subtitle">What's dominating the national conversation — powered by news, search curiosity, and video momentum</p>
   </header>
 
   <!-- API key banner -->
   <div class="api-banner" id="apiBanner">
     <span class="banner-icon">🔑</span>
     <span class="banner-text">
-      Enter your free <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3 key</a> to load live data.
-      No key? The chart runs on demo data.
+      Enter your free <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3 key</a> to add live video momentum.
+      News and Wikipedia signals work without a key.
     </span>
     <div class="api-key-form">
       <input type="text" id="apiKeyInput" placeholder="AIza..." autocomplete="off" spellcheck="false">
@@ -300,23 +363,25 @@
     </div>
   </div>
 
-  <!-- Mode toggle -->
-  <div class="mode-toggle" id="modeToggle">
-    <button class="mode-btn active" data-mode="realtime" id="btnRealtime">⚡ Real-Time</button>
-    <button class="mode-btn" data-mode="historical" id="btnHistorical">📅 Historical</button>
-  </div>
+  <div class="control-panel">
+    <!-- Mode toggle -->
+    <div class="mode-toggle" id="modeToggle">
+      <button class="mode-btn active" data-mode="realtime" id="btnRealtime">Real-Time</button>
+      <button class="mode-btn" data-mode="historical" id="btnHistorical">Historical</button>
+    </div>
 
-  <!-- Date picker (historical) -->
-  <div class="date-picker" id="datePicker">
-    <label for="dateInput">View pulse for:</label>
-    <input type="date" id="dateInput" value="2024-11-05" min="2020-08-12" max="2025-12-31">
-  </div>
+    <!-- Date picker (historical) -->
+    <div class="date-picker" id="datePicker">
+      <label for="dateInput">Date</label>
+      <input type="date" id="dateInput">
+    </div>
 
   <!-- Status bar -->
   <div class="status-bar">
     <span class="status-dot" id="statusDot"></span>
-    <span id="statusText">Demo data</span>
-    <button class="refresh-btn" id="refreshBtn" title="Refresh data">↻ Refresh</button>
+    <span id="statusText">Loading data...</span>
+    <button class="refresh-btn" id="refreshBtn" title="Refresh data">Refresh</button>
+  </div>
   </div>
 
   <div class="main-grid">
@@ -325,7 +390,7 @@
       <canvas id="radar" width="520" height="520"></canvas>
       <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
-        <span>Fetching YouTube trends…</span>
+        <span>Fetching cultural signals…</span>
       </div>
       <div class="tooltip" id="tooltip">
         <div class="tt-label"></div>
@@ -351,8 +416,9 @@
   </div>
 
   <p class="data-source">
-    Real-time data: <a href="https://developers.google.com/youtube/v3" target="_blank">YouTube Data API v3</a> ·
-    Historical data: <a href="https://www.kaggle.com/datasets/rsrishav/youtube-trending-video-dataset" target="_blank">Kaggle YouTube Trending</a>
+    Data: <a href="https://www.gdeltproject.org/" target="_blank">GDELT</a> ·
+    <a href="https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html" target="_blank">Wikipedia Pageviews</a> ·
+    <a href="https://developers.google.com/youtube/v3" target="_blank">YouTube Data API v3</a>
   </p>
 
 </div>
@@ -362,6 +428,8 @@
 //  CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════
 const YT_BASE = 'https://www.googleapis.com/youtube/v3';
+const GDELT_BASE = 'https://api.gdeltproject.org/api/v2/doc/doc';
+const WIKI_TOP_BASE = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access';
 const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
 
 // YouTube category IDs → pillar
@@ -383,40 +451,38 @@ const BUSINESS_KEYWORDS = [
 ];
 
 const PILLAR_META = [
-  { label: 'Politics',      color: '#f87171', emoji: '🏛️' },
-  { label: 'Sports',        color: '#fb923c', emoji: '⚽' },
-  { label: 'Entertainment', color: '#facc15', emoji: '🎬' },
-  { label: 'Sci & Tech',    color: '#4ade80', emoji: '🔬' },
-  { label: 'Business',      color: '#60a5fa', emoji: '📈' },
-  { label: 'Lifestyle',     color: '#c084fc', emoji: '🧘' },
+  { label: 'Politics',      color: '#ff6b6b', emoji: '🏛️' },
+  { label: 'Sports',        color: '#f5a524', emoji: '⚽' },
+  { label: 'Entertainment', color: '#ffe66d', emoji: '🎬' },
+  { label: 'Sci & Tech',    color: '#70e1ad', emoji: '🔬' },
+  { label: 'Business',      color: '#62d5ff', emoji: '📈' },
+  { label: 'Lifestyle',     color: '#b9f18d', emoji: '🧘' },
 ];
 
-const FALLBACK_SCORES = {
-  realtime:   { Politics: 72, Sports: 85, Entertainment: 64, 'Sci & Tech': 48, Business: 37, Lifestyle: 56 },
-  historical: { Politics: 95, Sports: 30, Entertainment: 42, 'Sci & Tech': 28, Business: 55, Lifestyle: 20 },
+const PILLAR_KEYWORDS = {
+  'Politics': ['election', 'congress', 'senate', 'president', 'white house', 'supreme court', 'policy', 'vote', 'protest', 'government', 'trump', 'biden'],
+  'Sports': ['sports', 'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'baseball', 'olympics', 'world cup', 'ufc', 'game', 'finals'],
+  'Entertainment': ['movie', 'film', 'music', 'album', 'celebrity', 'streaming', 'netflix', 'disney', 'actor', 'singer', 'concert', 'meme', 'viral'],
+  'Sci & Tech': ['technology', 'tech', 'science', 'ai', 'artificial intelligence', 'nasa', 'space', 'apple', 'google', 'microsoft', 'tesla', 'robot', 'startup'],
+  'Business': ['market', 'stocks', 'economy', 'inflation', 'crypto', 'bitcoin', 'federal reserve', 'earnings', 'tariff', 'recession', 'layoff', 'wall street'],
+  'Lifestyle': ['health', 'wellness', 'fashion', 'travel', 'food', 'relationship', 'fitness', 'beauty', 'recipe', 'wedding', 'home', 'diet'],
 };
 
-const FALLBACK_TOPICS = {
-  'Politics':      [{ name: 'Election Coverage', heat: '🔥 Demo' }, { name: 'Senate Race', heat: '📈 Demo' }, { name: 'Policy Debates', heat: '🔄 Demo' }],
-  'Sports':        [{ name: 'NBA Finals', heat: '🔥 Demo' }, { name: 'Champions League', heat: '🔥 Demo' }, { name: 'MLB Highlights', heat: '📈 Demo' }],
-  'Entertainment': [{ name: 'New Music Drop', heat: '🔥 Demo' }, { name: 'Viral Moment', heat: '📈 Demo' }, { name: 'Award Show', heat: '🔄 Demo' }],
-  'Sci & Tech':    [{ name: 'AI Breakthrough', heat: '🔥 Demo' }, { name: 'Rocket Launch', heat: '📈 Demo' }, { name: 'Tech Review', heat: '🔄 Demo' }],
-  'Business':      [{ name: 'Market Rally', heat: '🔥 Demo' }, { name: 'Fed Decision', heat: '📈 Demo' }, { name: 'Crypto News', heat: '🔄 Demo' }],
-  'Lifestyle':     [{ name: 'Travel Vlogs', heat: '🔥 Demo' }, { name: 'Fitness Trends', heat: '📈 Demo' }, { name: 'Food & Cooking', heat: '🔄 Demo' }],
-};
+const GDELT_QUERY = [
+  ...new Set(Object.values(PILLAR_KEYWORDS).flat())
+].map(term => term.includes(' ') ? `"${term}"` : term).join(' OR ');
 
 // ═══════════════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════════════
 let apiKey = '';
 let mode = 'realtime';
-let pillars = PILLAR_META.map(p => ({ ...p, score: FALLBACK_SCORES.realtime[p.label] }));
+let pillars = PILLAR_META.map(p => ({ ...p, score: 0 }));
 let displayScores = pillars.map(p => p.score);
-let currentTopics = JSON.parse(JSON.stringify(FALLBACK_TOPICS));
+let currentTopics = Object.fromEntries(PILLAR_META.map(p => [p.label, []]));
 let hoveredIndex = -1;
 let selectedIndex = -1;
 let animFrame = null;
-let historicalData = null; // populated from historical_data.json if available
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CANVAS
@@ -451,8 +517,8 @@ function draw() {
               : ctx.lineTo(cx + r*Math.cos(a), cy + r*Math.sin(a));
     }
     ctx.closePath();
-    ctx.strokeStyle = 'rgba(255,255,255,0.055)'; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.font = '10px Inter';
+    ctx.strokeStyle = 'rgba(237,247,239,0.075)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = 'rgba(237,247,239,0.22)'; ctx.font = '10px Manrope';
     ctx.textAlign = 'left'; ctx.fillText(String(i*20), cx+4, cy - r + 12);
   }
 
@@ -460,7 +526,7 @@ function draw() {
   for (let i = 0; i < n; i++) {
     const p = ptOnAxis(i, 100);
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(p.x, p.y);
-    ctx.strokeStyle = (i===hoveredIndex||i===selectedIndex) ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.055)';
+    ctx.strokeStyle = (i===hoveredIndex||i===selectedIndex) ? 'rgba(112,225,173,0.32)' : 'rgba(237,247,239,0.075)';
     ctx.lineWidth = 1; ctx.stroke();
   }
 
@@ -472,10 +538,11 @@ function draw() {
   });
   ctx.closePath();
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
-  grad.addColorStop(0, 'rgba(96,165,250,0.20)');
-  grad.addColorStop(1, 'rgba(167,139,250,0.05)');
+  grad.addColorStop(0, 'rgba(112,225,173,0.28)');
+  grad.addColorStop(0.58, 'rgba(98,213,255,0.12)');
+  grad.addColorStop(1, 'rgba(245,199,102,0.05)');
   ctx.fillStyle = grad; ctx.fill();
-  ctx.strokeStyle = 'rgba(96,165,250,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = 'rgba(112,225,173,0.72)'; ctx.lineWidth = 2.5; ctx.stroke();
 
   // dots & labels
   displayScores.forEach((s, i) => {
@@ -486,19 +553,19 @@ function draw() {
 
     if (active) {
       ctx.beginPath(); ctx.arc(p.x, p.y, 20, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(${r2},${g2},${b2},0.12)`; ctx.fill();
+      ctx.fillStyle = `rgba(${r2},${g2},${b2},0.18)`; ctx.fill();
     }
 
     ctx.beginPath(); ctx.arc(p.x, p.y, active ? 8 : 5, 0, Math.PI*2);
     ctx.fillStyle = c; ctx.fill();
-    ctx.strokeStyle = '#06080f'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#07110f'; ctx.lineWidth = 2.5; ctx.stroke();
 
     // label
     const lp = ptOnAxis(i, 120);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = '17px Inter'; ctx.fillText(pillars[i].emoji, lp.x, lp.y - 10);
-    ctx.font = `${active?'700':'500'} 12px Inter`;
-    ctx.fillStyle = active ? '#f1f5f9' : '#94a3b8';
+    ctx.font = '18px Manrope'; ctx.fillText(pillars[i].emoji, lp.x, lp.y - 10);
+    ctx.font = `${active?'800':'700'} 12px Manrope`;
+    ctx.fillStyle = active ? '#edf7ef' : '#9db2a8';
     ctx.fillText(pillars[i].label, lp.x, lp.y + 10);
   });
 }
@@ -530,7 +597,51 @@ function setStatus(state, text) {
 
 function setLoading(on) {
   document.getElementById('loadingOverlay').classList.toggle('show', on);
-  setStatus(on ? 'loading' : '', on ? 'Fetching YouTube data…' : '');
+  setStatus(on ? 'loading' : '', on ? 'Fetching cultural signals…' : '');
+}
+
+function yyyymmddhh(dateStr, endOfDay) {
+  return dateStr.replaceAll('-', '') + (endOfDay ? '235959' : '000000');
+}
+
+function yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function classifyPillar(text) {
+  const haystack = String(text || '').toLowerCase().replaceAll('_', ' ');
+  let best = null;
+  let bestScore = 0;
+  for (const [pillar, keywords] of Object.entries(PILLAR_KEYWORDS)) {
+    const score = keywords.reduce((sum, kw) => sum + (haystack.includes(kw) ? 1 : 0), 0);
+    if (score > bestScore) {
+      best = pillar;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function blankRaw() {
+  return Object.fromEntries(PILLAR_META.map(p => [p.label, 0]));
+}
+
+function normalizeRaw(raw) {
+  const max = Math.max(...Object.values(raw), 1);
+  return Object.fromEntries(Object.entries(raw).map(([key, val]) => [key, Math.round((val / max) * 100)]));
+}
+
+function emptyTopics() {
+  return Object.fromEntries(PILLAR_META.map(p => [p.label, []]));
+}
+
+const LOCAL_API_ORIGIN = 'http://127.0.0.1:4174';
+
+function apiUrl(path) {
+  const base = location.protocol === 'file:' ? LOCAL_API_ORIGIN : location.origin;
+  return new URL(path, base).toString();
 }
 
 // Category ID → pillar lookup (used during client-side classification)
@@ -574,57 +685,145 @@ async function fetchTrendingPage(pageToken) {
   return data;
 }
 
-async function fetchYouTubeScores() {
-  if (!apiKey) return;
-  setLoading(true);
+async function fetchYouTubeSignal() {
+  if (!apiKey) return null;
 
-  try {
-    const pillarRaw   = { Politics: 0, Sports: 0, Entertainment: 0, 'Sci & Tech': 0, Business: 0, Lifestyle: 0 };
-    const topVideos   = { Politics: [], Sports: [], Entertainment: [], 'Sci & Tech': [], Business: [], Lifestyle: [] };
+  const pillarRaw = blankRaw();
+  const topVideos = emptyTopics();
 
-    // Fetch up to 2 pages (100 videos) — costs ~2 quota units total
-    const page1 = await fetchTrendingPage();
-    const allItems = [...(page1.items || [])];
-    if (page1.nextPageToken) {
-      const page2 = await fetchTrendingPage(page1.nextPageToken);
-      allItems.push(...(page2.items || []));
-    }
+  // Fetch up to 2 pages (100 videos) — costs ~2 quota units total
+  const page1 = await fetchTrendingPage();
+  const allItems = [...(page1.items || [])];
+  if (page1.nextPageToken) {
+    const page2 = await fetchTrendingPage(page1.nextPageToken);
+    allItems.push(...(page2.items || []));
+  }
 
-    // Classify each video into a pillar by its categoryId + business keywords
-    for (const item of allItems) {
-      const title  = item.snippet?.title || '';
-      const catId  = parseInt(item.snippet?.categoryId || 0);
-      const score  = rawScore(item);
+  // Classify each video into a pillar by its categoryId + business keywords
+  for (const item of allItems) {
+    const title = item.snippet?.title || '';
+    const catId = parseInt(item.snippet?.categoryId || 0);
+    const score = rawScore(item);
 
-      let pillar = isBusinessVideo(title) ? 'Business' : (CAT_TO_PILLAR[catId] || null);
-      if (!pillar) continue; // uncategorised — skip
+    let pillar = isBusinessVideo(title) ? 'Business' : (CAT_TO_PILLAR[catId] || classifyPillar(title));
+    if (!pillar) continue;
 
-      pillarRaw[pillar] += score;
-      topVideos[pillar].push({ title, score });
-    }
+    pillarRaw[pillar] += score;
+    topVideos[pillar].push({ name: title, score, heat: 'Video' });
+  }
 
-    // Normalize 0–100
-    const maxRaw = Math.max(...Object.values(pillarRaw), 1);
-    const normalized = {};
-    for (const [p, raw] of Object.entries(pillarRaw)) {
-      normalized[p] = Math.round((raw / maxRaw) * 100);
-    }
-
-    // Build top-5 topics per pillar
-    const pillarTopics = {};
-    for (const p of Object.keys(topVideos)) {
-      const sorted = topVideos[p].sort((a, b) => b.score - a.score).slice(0, 5);
-      pillarTopics[p] = sorted.map((v, idx) => ({
-        name: v.title.length > 60 ? v.title.slice(0, 60) + '…' : v.title,
-        heat: idx === 0 ? '🔥 #1 Trending' : idx < 2 ? '📈 Top 3' : '🔄 Top 5',
+  const topics = emptyTopics();
+  for (const p of Object.keys(topVideos)) {
+    topics[p] = topVideos[p]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map((v, idx) => ({
+        name: v.name.length > 60 ? v.name.slice(0, 60) + '...' : v.name,
+        heat: idx === 0 ? 'Video #1' : 'Video Top 5',
       }));
+  }
+
+  return { scores: normalizeRaw(pillarRaw), topics };
+}
+
+async function fetchGdeltSignal(dateStr) {
+  const params = new URLSearchParams({
+    query: `(${GDELT_QUERY}) sourcecountry:US`,
+    mode: 'artlist',
+    format: 'json',
+    maxrecords: '250',
+    sort: 'datedesc',
+  });
+
+  if (dateStr) {
+    params.set('STARTDATETIME', yyyymmddhh(dateStr, false));
+    params.set('ENDDATETIME', yyyymmddhh(dateStr, true));
+  } else {
+    params.set('timespan', '24h');
+  }
+
+  const res = await fetch(`${GDELT_BASE}?${params}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(`GDELT error ${res.status}`);
+
+  const raw = blankRaw();
+  const topics = emptyTopics();
+  for (const article of data.articles || []) {
+    const title = article.title || '';
+    const pillar = classifyPillar(`${title} ${article.domain || ''}`);
+    if (!pillar) continue;
+    raw[pillar] += 1;
+    if (topics[pillar].length < 5) {
+      topics[pillar].push({
+        name: title.length > 60 ? title.slice(0, 60) + '...' : title,
+        heat: article.domain || 'News',
+      });
     }
+  }
 
-    applyScores(normalized, pillarTopics, 'Live · YouTube · updated ' + new Date().toLocaleTimeString());
+  return { scores: normalizeRaw(raw), topics };
+}
 
+async function fetchWikipediaSignal(dateStr) {
+  const wikiDate = dateStr === todayISO() ? yesterdayISO() : dateStr;
+  const [year, month, day] = wikiDate.split('-');
+  const res = await fetch(`${WIKI_TOP_BASE}/${year}/${month}/${day}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Wikipedia error ${res.status}`);
+
+  const raw = blankRaw();
+  const topics = emptyTopics();
+  for (const page of data.items?.[0]?.articles || []) {
+    const title = page.article || '';
+    if (title === 'Main_Page' || title.startsWith('Special:')) continue;
+    const pillar = classifyPillar(title);
+    if (!pillar) continue;
+    raw[pillar] += Math.log10((page.views || 0) + 1);
+    if (topics[pillar].length < 5) {
+      topics[pillar].push({
+        name: title.replaceAll('_', ' '),
+        heat: `${Math.round((page.views || 0) / 1000)}k views`,
+      });
+    }
+  }
+
+  return { scores: normalizeRaw(raw), topics };
+}
+
+function mergeTopics(...topicSets) {
+  const merged = emptyTopics();
+  for (const set of topicSets) {
+    if (!set) continue;
+    for (const p of PILLAR_META.map(x => x.label)) {
+      merged[p].push(...(set[p] || []));
+      merged[p] = merged[p].slice(0, 5);
+    }
+  }
+  return merged;
+}
+
+function blendSignals(signals) {
+  const active = signals.filter(Boolean);
+  const scores = blankRaw();
+  const totalWeight = active.reduce((sum, s) => sum + s.weight, 0) || 1;
+  for (const signal of active) {
+    for (const p of PILLAR_META.map(x => x.label)) {
+      scores[p] += (signal.data.scores[p] || 0) * (signal.weight / totalWeight);
+    }
+  }
+  return Object.fromEntries(Object.entries(scores).map(([p, v]) => [p, Math.round(v)]));
+}
+
+async function fetchLivePulse() {
+  setLoading(true);
+  try {
+    const res = await fetch(apiUrl(`/api/pulse?mode=live&date=${todayISO()}`));
+    const data = await readPulseResponse(res);
+    if (!res.ok) throw new Error(data.error || `Pulse API error ${res.status}`);
+    applyScores(data.scores, data.topics, `Live · ${data.source}`);
   } catch (err) {
     setLoading(false);
-    setStatus('error', 'API error — ' + err.message);
+    setStatus('error', 'Data error — open http://127.0.0.1:4174/');
     console.error(err);
   }
 }
@@ -640,47 +839,67 @@ function applyScores(scoreMap, topicsMap, statusMsg) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  HISTORICAL DATA  (historical_data.json, generated by process_youtube.py)
+//  HISTORICAL DATA  (GDELT + Wikipedia Pageviews)
 // ═══════════════════════════════════════════════════════════════════════
-async function tryLoadHistoricalFile() {
-  try {
-    const res = await fetch('./historical_data.json');
-    if (!res.ok) return false;
-    historicalData = await res.json();
-    console.log('✅ Loaded historical_data.json');
-    return true;
-  } catch { return false; }
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-function applyHistoricalDate(dateStr) {
-  if (!historicalData) {
-    // No historical file — generate plausible mock data keyed to date
-    const seed = dateStr.split('-').reduce((a, b) => a + Number(b), 0);
-    const rand = (offset) => Math.max(10, Math.min(95, 45 + ((seed * (offset+1)) % 50) - 25));
-    const scores = {};
-    pillars.forEach((p, i) => { scores[p.label] = rand(i * 17 + 3); });
-    applyScores(scores, FALLBACK_TOPICS, `Demo historical data for ${dateStr}`);
+async function configureDatePicker() {
+  const input = document.getElementById('dateInput');
+  try {
+    const res = await fetch(apiUrl('/api/range'));
+    const range = await res.json();
+    if (!res.ok) throw new Error(range.error || `Range error ${res.status}`);
+    input.min = range.earliest;
+    input.max = range.latest;
+    input.value = range.latest;
     return;
+  } catch {
+    const today = new Date();
+    const yearAgo = new Date(today);
+    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    input.min = yearAgo.toISOString().slice(0, 10);
+    input.max = yesterday.toISOString().slice(0, 10);
+    input.value = input.max;
   }
+}
 
-  const entry = historicalData.scores?.[dateStr];
-  if (!entry) {
-    setStatus('error', `No data for ${dateStr}`);
-    return;
-  }
-
-  // Build topics from historical file
-  const topics = {};
-  const rawTopics = historicalData.topics?.[dateStr] || {};
-  pillars.forEach(p => {
-    const vids = rawTopics[p.label] || [];
-    topics[p.label] = vids.slice(0, 5).map((title, idx) => ({
-      name: title.length > 55 ? title.slice(0, 55) + '…' : title,
-      heat: idx === 0 ? '🔥 #1 Trending' : idx < 2 ? '📈 Top 3' : '🔄 Top 5',
-    }));
+function syncModeUI() {
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
   });
+  document.getElementById('datePicker').classList.toggle('visible', mode === 'historical');
+  localStorage.setItem('pulse_mode', mode);
+}
 
-  applyScores(entry, topics, `Historical · ${dateStr} · Kaggle dataset`);
+async function applyHistoricalDate(dateStr) {
+  setLoading(true);
+  try {
+    const res = await fetch(apiUrl(`/api/pulse?mode=historical&date=${dateStr}`));
+    const data = await readPulseResponse(res);
+    if (!res.ok) throw new Error(data.error || `Pulse API error ${res.status}`);
+    applyScores(data.scores, data.topics, `Historical · ${dateStr} · ${data.source}`);
+  } catch (err) {
+    setLoading(false);
+    setStatus('error', 'Historical data error — open http://127.0.0.1:4174/');
+    console.error(err);
+  }
+}
+
+async function readPulseResponse(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Open the app from http://127.0.0.1:4174/ so /api/pulse returns real data.');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -717,7 +936,8 @@ function nearestPoint(mx, my) {
 
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
-  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const mx = (e.clientX - r.left) * (W / r.width);
+  const my = (e.clientY - r.top) * (H / r.height);
   const hit = nearestPoint(mx, my);
   if (hit !== hoveredIndex) { hoveredIndex = hit; draw(); }
   if (hit >= 0) { showTooltip(hit, e.clientX, e.clientY); canvas.style.cursor = 'pointer'; }
@@ -726,7 +946,10 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseleave', () => { hoveredIndex = -1; hideTooltip(); draw(); });
 canvas.addEventListener('click', e => {
   const r = canvas.getBoundingClientRect();
-  const hit = nearestPoint(e.clientX - r.left, e.clientY - r.top);
+  const hit = nearestPoint(
+    (e.clientX - r.left) * (W / r.width),
+    (e.clientY - r.top) * (H / r.height)
+  );
   if (hit >= 0) { selectedIndex = hit; renderDrilldown(hit); draw(); }
 });
 
@@ -777,15 +1000,8 @@ function buildSliders() {
     row.innerHTML = `
       <span class="dot" style="background:${p.color}"></span>
       <span class="label">${p.label}</span>
-      <input type="range" min="0" max="100" value="${Math.round(p.score)}" data-i="${i}">
+      <input type="range" min="0" max="100" value="${Math.round(p.score)}" data-i="${i}" disabled aria-label="${p.label} score" tabindex="-1">
       <span class="val">${Math.round(p.score)}</span>`;
-    const inp = row.querySelector('input'), val = row.querySelector('.val');
-    inp.addEventListener('input', () => {
-      const v = Number(inp.value);
-      pillars[i].score = v; val.textContent = v;
-      kickAnim();
-      if (selectedIndex === i) renderDrilldown(i);
-    });
     el.appendChild(row);
   });
 }
@@ -799,9 +1015,7 @@ document.getElementById('modeToggle').addEventListener('click', e => {
   const newMode = btn.dataset.mode;
   if (newMode === mode) return;
   mode = newMode;
-  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === btn));
-  const dp = document.getElementById('datePicker');
-  dp.classList.toggle('visible', mode === 'historical');
+  syncModeUI();
 
   // Reset drilldown
   selectedIndex = -1;
@@ -809,13 +1023,7 @@ document.getElementById('modeToggle').addEventListener('click', e => {
   document.getElementById('ddContent').innerHTML = '<p class="dd-empty-msg">Click a point on the radar<br>to see what\'s driving the conversation.</p>';
 
   if (mode === 'realtime') {
-    if (apiKey) fetchYouTubeScores();
-    else {
-      pillars.forEach((p, i) => { p.score = FALLBACK_SCORES.realtime[p.label]; });
-      currentTopics = JSON.parse(JSON.stringify(FALLBACK_TOPICS));
-      buildSliders(); kickAnim();
-      setStatus('', 'Demo data');
-    }
+    fetchLivePulse();
   } else {
     applyHistoricalDate(document.getElementById('dateInput').value);
   }
@@ -849,7 +1057,7 @@ function initApiKey(key) {
   apiKey = key.trim();
   localStorage.setItem('yt_api_key', apiKey);
   document.getElementById('apiBanner').classList.add('hidden');
-  fetchYouTubeScores();
+  fetchLivePulse();
 }
 
 document.getElementById('apiKeyBtn').addEventListener('click', () => {
@@ -865,12 +1073,12 @@ document.getElementById('apiKeyInput').addEventListener('keydown', e => {
 
 // Refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
-  if (mode === 'realtime' && apiKey) fetchYouTubeScores();
+  if (mode === 'realtime') fetchLivePulse();
   else if (mode === 'historical') applyHistoricalDate(document.getElementById('dateInput').value);
 });
 
 // Auto-refresh every 30 min in real-time mode
-setInterval(() => { if (mode === 'realtime' && apiKey) fetchYouTubeScores(); }, REFRESH_MS);
+setInterval(() => { if (mode === 'realtime') fetchLivePulse(); }, REFRESH_MS);
 
 // ═══════════════════════════════════════════════════════════════════════
 //  INIT
@@ -880,11 +1088,21 @@ setInterval(() => { if (mode === 'realtime' && apiKey) fetchYouTubeScores(); }, 
   draw();
   await loadLocalConfig();
   restoreApiKey();
-  await tryLoadHistoricalFile();
-  if (apiKey && mode === 'realtime') {
-    fetchYouTubeScores();
+  await configureDatePicker();
+
+  const savedMode = localStorage.getItem('pulse_mode');
+  if (savedMode === 'historical' || savedMode === 'realtime') {
+    mode = savedMode;
   } else {
-    setStatus('', 'Demo data — enter API key for live data');
+    mode = 'historical';
+  }
+
+  syncModeUI();
+
+  if (mode === 'historical') {
+    applyHistoricalDate(document.getElementById('dateInput').value);
+  } else {
+    fetchLivePulse();
   }
 })();
 </script>
