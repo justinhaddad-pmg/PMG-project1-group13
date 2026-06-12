@@ -142,17 +142,37 @@
       display: flex; align-items: center; gap: 0.65rem;
       opacity: 0; height: 0; overflow: hidden;
       transition: opacity 0.4s ease, height 0.4s ease, margin 0.4s ease;
+      flex-wrap: wrap;
     }
-    .date-picker.visible { opacity: 1; height: 38px; }
+    .date-picker.visible { opacity: 1; height: auto; }
     .date-picker label { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
+    .date-picker select,
     .date-picker input[type="date"] {
       font-family: inherit; font-size: 0.84rem; font-weight: 700;
       background: rgba(45, 33, 24, 0.44);
       border: 1px solid rgba(222,202,172,0.16);
       border-radius: 8px; padding: 0.5rem 0.7rem;
       color: var(--text); outline: none;
+      min-height: 38px;
     }
+    .date-picker select { cursor: pointer; }
+    .date-picker option { background: #34261c; color: var(--text); }
     .date-picker input[type="date"]:focus { border-color: rgba(116,199,170,0.6); }
+    .range-fields {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .range-fields.visible { display: flex; }
+    .single-date.hidden { display: none; }
+    .range-separator {
+      color: var(--faint);
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
 
     .status-bar {
       display: flex; align-items: center; gap: 0.6rem;
@@ -187,6 +207,13 @@
       grid-template-columns: minmax(480px, 0.95fr) minmax(420px, 1.05fr);
       gap: 1.25rem; width: 100%;
       align-items: flex-start; justify-content: center;
+    }
+
+    .chart-column {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      min-width: 0;
     }
 
     .chart-card {
@@ -299,6 +326,68 @@
     }
     .slider-row input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.18); }
     .slider-row .val { font-size: 0.82rem; font-weight: 800; text-align: right; color: var(--text); }
+
+    .score-info {
+      display: grid;
+      gap: 0.9rem;
+    }
+    .score-info-copy {
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+    .score-formula {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.55rem;
+    }
+    .score-chip {
+      min-width: 0;
+      padding: 0.72rem 0.65rem;
+      border: 1px solid rgba(222,202,172,0.13);
+      border-radius: 8px;
+      background: rgba(49,36,26,0.34);
+    }
+    .score-chip span {
+      display: block;
+      font-size: 0.64rem;
+      color: var(--faint);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.3rem;
+    }
+    .score-chip strong {
+      display: block;
+      color: var(--text);
+      font-size: 0.86rem;
+      line-height: 1.25;
+    }
+    .score-scale {
+      display: grid;
+      gap: 0.42rem;
+    }
+    .score-scale-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(208,190,166,0.24), rgba(169,133,90,0.62), rgba(116,199,170,0.86));
+      box-shadow: inset 0 0 0 1px rgba(222,202,172,0.12);
+    }
+    .score-scale-labels {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      color: var(--faint);
+      font-size: 0.66rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .score-note {
+      color: var(--faint);
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
 
     .drilldown.empty .dd-content-inner { opacity: 0.4; }
     .dd-header {
@@ -428,7 +517,7 @@
     }
     .topic-facts {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 0.55rem;
       margin-bottom: 1.15rem;
     }
@@ -453,6 +542,54 @@
       font-size: 0.82rem;
       color: var(--text);
       overflow-wrap: anywhere;
+    }
+    .topic-insight {
+      border: 1px solid rgba(222,202,172,0.14);
+      border-radius: 8px;
+      background: rgba(49,36,26,0.26);
+      padding: 0.78rem;
+      margin-bottom: 1rem;
+    }
+    .topic-insight span {
+      display: block;
+      color: var(--faint);
+      font-size: 0.66rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.35rem;
+    }
+    .topic-insight p {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    .topic-keywords {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin: -0.2rem 0 1rem;
+    }
+    .topic-keywords span {
+      color: var(--faint);
+      font-size: 0.66rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-right: 0.15rem;
+    }
+    .topic-keyword {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border: 1px solid rgba(116,199,170,0.22);
+      border-radius: 999px;
+      padding: 0.22rem 0.5rem;
+      background: rgba(116,199,170,0.10);
+      color: var(--accent);
+      font-size: 0.68rem;
+      font-weight: 850;
     }
     .topic-actions {
       display: flex;
@@ -492,11 +629,13 @@
       .control-panel { justify-content: stretch; }
       .mode-toggle, .date-picker, .status-bar { width: 100%; }
       .mode-btn { flex: 1; padding-inline: 0.5rem; }
-      .date-picker.visible { height: auto; }
       .date-picker { justify-content: space-between; }
       .date-picker input[type="date"] { max-width: 170px; }
+      .date-picker select { flex: 1; min-width: 150px; }
+      .range-fields { width: 100%; }
       .status-bar { justify-content: space-between; }
       .slider-row { grid-template-columns: 10px 88px minmax(68px, 1fr) 34px; }
+      .score-formula { grid-template-columns: 1fr; }
       .topic-facts { grid-template-columns: 1fr; }
     }
   </style>
@@ -534,8 +673,19 @@
 
     <!-- Date picker (historical) -->
     <div class="date-picker" id="datePicker">
-      <label for="dateInput">Date</label>
-      <input type="date" id="dateInput">
+      <label for="historyWindow">View</label>
+      <select id="historyWindow" aria-label="Historical time window">
+        <option value="day">Day</option>
+        <option value="week">Current week</option>
+        <option value="month">Current month</option>
+        <option value="custom">Date range</option>
+      </select>
+      <input class="single-date" type="date" id="dateInput" aria-label="Historical day">
+      <div class="range-fields" id="rangeFields">
+        <input type="date" id="startDateInput" aria-label="Historical range start">
+        <span class="range-separator">to</span>
+        <input type="date" id="endDateInput" aria-label="Historical range end">
+      </div>
     </div>
 
   <!-- Status bar -->
@@ -547,18 +697,51 @@
   </div>
 
   <div class="main-grid">
-    <!-- Radar chart -->
-    <div class="chart-card">
-      <canvas id="radar" width="520" height="520"></canvas>
-      <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-        <span>Fetching cultural signals…</span>
+    <div class="chart-column">
+      <!-- Radar chart -->
+      <div class="chart-card">
+        <canvas id="radar" width="520" height="520"></canvas>
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="spinner"></div>
+          <span>Fetching cultural signals…</span>
+        </div>
+        <div class="tooltip" id="tooltip">
+          <div class="tt-label"></div>
+          <div class="tt-score"></div>
+          <div class="tt-sub"></div>
+          <div class="tt-bar"><div class="tt-bar-fill"></div></div>
+        </div>
       </div>
-      <div class="tooltip" id="tooltip">
-        <div class="tt-label"></div>
-        <div class="tt-score"></div>
-        <div class="tt-sub"></div>
-        <div class="tt-bar"><div class="tt-bar-fill"></div></div>
+      <div class="panel-card score-info">
+        <h3>How Scores Work</h3>
+        <p class="score-info-copy">
+          Each pillar score is a relative attention index for the selected day. The highest active pillar sets the day&apos;s benchmark, and the rest are scaled against it.
+        </p>
+        <div class="score-formula">
+          <div class="score-chip">
+            <span>News</span>
+            <strong>60% GDELT article volume</strong>
+          </div>
+          <div class="score-chip">
+            <span>Curiosity</span>
+            <strong>40% Wikipedia pageviews</strong>
+          </div>
+          <div class="score-chip">
+            <span>Scale</span>
+            <strong>0-100 relative heat</strong>
+          </div>
+        </div>
+        <div class="score-scale" aria-hidden="true">
+          <div class="score-scale-bar"></div>
+          <div class="score-scale-labels">
+            <span>Quiet</span>
+            <span>Building</span>
+            <span>Dominant</span>
+          </div>
+        </div>
+        <p class="score-note">
+          Topic rows show the items driving that pillar: news sources come from matched article coverage, while Wikipedia topics show pageview spikes.
+        </p>
       </div>
     </div>
 
@@ -611,7 +794,16 @@
         <span>Rank</span>
         <strong id="topicModalRank"></strong>
       </div>
+      <div class="topic-fact">
+        <span>Signal type</span>
+        <strong id="topicModalSignal"></strong>
+      </div>
     </div>
+    <div class="topic-insight">
+      <span>Why it ranked</span>
+      <p id="topicModalWhy"></p>
+    </div>
+    <div class="topic-keywords" id="topicModalKeywords"></div>
     <div class="topic-actions">
       <a class="topic-action" id="topicModalLink" href="#" target="_blank" rel="noopener noreferrer">Open source</a>
       <span class="topic-note" id="topicModalNote"></span>
@@ -673,6 +865,8 @@ const GDELT_QUERY = [
 // ═══════════════════════════════════════════════════════════════════════
 let apiKey = '';
 let mode = 'realtime';
+let historicalWindow = 'day';
+let historicalRange = { earliest: '', latest: '' };
 let pillars = PILLAR_META.map(p => ({ ...p, score: 0 }));
 let displayScores = pillars.map(p => p.score);
 let currentTopics = Object.fromEntries(PILLAR_META.map(p => [p.label, []]));
@@ -1047,15 +1241,29 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
+function addDaysISO(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function configureDatePicker() {
   const input = document.getElementById('dateInput');
+  const startInput = document.getElementById('startDateInput');
+  const endInput = document.getElementById('endDateInput');
   try {
     const res = await fetch(apiUrl('/api/range'));
     const range = await res.json();
     if (!res.ok) throw new Error(range.error || `Range error ${res.status}`);
-    input.min = range.earliest;
-    input.max = range.latest;
+    historicalRange = range;
+    [input, startInput, endInput].forEach(el => {
+      el.min = range.earliest;
+      el.max = range.latest;
+    });
     input.value = range.latest;
+    endInput.value = range.latest;
+    startInput.value = addDaysISO(range.latest, -6);
+    if (startInput.value < range.earliest) startInput.value = range.earliest;
     return;
   } catch {
     const today = new Date();
@@ -1063,10 +1271,25 @@ async function configureDatePicker() {
     yearAgo.setFullYear(yearAgo.getFullYear() - 1);
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    input.min = yearAgo.toISOString().slice(0, 10);
-    input.max = yesterday.toISOString().slice(0, 10);
+    historicalRange = {
+      earliest: yearAgo.toISOString().slice(0, 10),
+      latest: yesterday.toISOString().slice(0, 10),
+    };
+    [input, startInput, endInput].forEach(el => {
+      el.min = historicalRange.earliest;
+      el.max = historicalRange.latest;
+    });
     input.value = input.max;
+    endInput.value = input.max;
+    startInput.value = addDaysISO(input.max, -6);
   }
+}
+
+function syncHistoricalWindowUI() {
+  historicalWindow = document.getElementById('historyWindow').value;
+  document.getElementById('dateInput').classList.toggle('hidden', historicalWindow !== 'day');
+  document.getElementById('rangeFields').classList.toggle('visible', historicalWindow === 'custom');
+  localStorage.setItem('pulse_historical_window', historicalWindow);
 }
 
 function syncModeUI() {
@@ -1074,16 +1297,39 @@ function syncModeUI() {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   });
   document.getElementById('datePicker').classList.toggle('visible', mode === 'historical');
+  syncHistoricalWindowUI();
   localStorage.setItem('pulse_mode', mode);
 }
 
-async function applyHistoricalDate(dateStr) {
+function historicalPulseUrl() {
+  const params = new URLSearchParams({ mode: 'historical', window: historicalWindow });
+  if (historicalWindow === 'custom') {
+    params.set('start', document.getElementById('startDateInput').value);
+    params.set('end', document.getElementById('endDateInput').value);
+  } else {
+    params.set('date', document.getElementById('dateInput').value);
+  }
+  return apiUrl(`/api/pulse?${params.toString()}`);
+}
+
+function historicalStatusLabel(data) {
+  const windowLabel = {
+    day: 'Day',
+    week: 'Current week',
+    month: 'Current month',
+    custom: 'Date range',
+  }[historicalWindow] || 'Historical';
+  const dateLabel = data.window?.label || document.getElementById('dateInput').value;
+  return `${windowLabel} · ${dateLabel} · ${data.source}`;
+}
+
+async function applyHistoricalSelection() {
   setLoading(true);
   try {
-    const res = await fetch(apiUrl(`/api/pulse?mode=historical&date=${dateStr}`));
+    const res = await fetch(historicalPulseUrl());
     const data = await readPulseResponse(res);
     if (!res.ok) throw new Error(data.error || `Pulse API error ${res.status}`);
-    applyScores(data.scores, data.topics, `Historical · ${dateStr} · ${data.source}`, data.source);
+    applyScores(data.scores, data.topics, historicalStatusLabel(data), data.source);
   } catch (err) {
     setLoading(false);
     setStatus('error', `Historical data error — ${err.message}`);
@@ -1171,6 +1417,12 @@ function topicDescription(topic, pillarLabel) {
   return `${topic.name} is appearing as a notable ${pillarLabel} signal in the selected historical window.${heat} Source: ${source}.`;
 }
 
+function topicWhy(topic, pillarLabel) {
+  if (topic.why) return topic.why;
+  const heat = topic.heat ? ` Its signal was ${topic.heat}.` : '';
+  return `${topic.name} ranked in ${pillarLabel} because it matched the pillar's source signals during the selected window.${heat}`;
+}
+
 function openTopicModal(pillarIndex, topicIndex) {
   const pillar = pillars[pillarIndex];
   if (!pillar) return;
@@ -1181,6 +1433,7 @@ function openTopicModal(pillarIndex, topicIndex) {
   const link = document.getElementById('topicModalLink');
   const note = document.getElementById('topicModalNote');
   const source = topic.source || currentSource || 'Historical data';
+  const keywords = Array.isArray(topic.keywords) ? topic.keywords.filter(Boolean) : [];
 
   document.getElementById('topicModalDot').style.background = pillar.color;
   document.getElementById('topicModalDot').style.color = pillar.color;
@@ -1190,6 +1443,19 @@ function openTopicModal(pillarIndex, topicIndex) {
   document.getElementById('topicModalHeat').textContent = topic.heat || 'Trending signal';
   document.getElementById('topicModalSource').textContent = source;
   document.getElementById('topicModalRank').textContent = `#${topicIndex + 1} in ${pillar.label}`;
+  document.getElementById('topicModalSignal').textContent = topic.signalType || 'Historical signal';
+  document.getElementById('topicModalWhy').textContent = topicWhy(topic, pillar.label);
+
+  const keywordEl = document.getElementById('topicModalKeywords');
+  if (keywords.length) {
+    keywordEl.hidden = false;
+    keywordEl.innerHTML = `<span>Matched terms</span>${keywords
+      .map(keyword => `<strong class="topic-keyword">${escapeHtml(keyword)}</strong>`)
+      .join('')}`;
+  } else {
+    keywordEl.hidden = false;
+    keywordEl.innerHTML = `<span>Signal note</span><strong class="topic-keyword">${escapeHtml(topic.sourceDetail || source)}</strong>`;
+  }
 
   if (topic.url) {
     link.hidden = false;
@@ -1317,12 +1583,30 @@ document.getElementById('modeToggle').addEventListener('click', e => {
   if (mode === 'realtime') {
     fetchLivePulse();
   } else {
-    applyHistoricalDate(document.getElementById('dateInput').value);
+    applyHistoricalSelection();
   }
 });
 
-document.getElementById('dateInput').addEventListener('change', e => {
-  applyHistoricalDate(e.target.value);
+document.getElementById('historyWindow').addEventListener('change', e => {
+  historicalWindow = e.target.value;
+  syncHistoricalWindowUI();
+  applyHistoricalSelection();
+});
+
+document.getElementById('dateInput').addEventListener('change', () => {
+  applyHistoricalSelection();
+});
+
+document.getElementById('startDateInput').addEventListener('change', e => {
+  const endInput = document.getElementById('endDateInput');
+  if (endInput.value && e.target.value > endInput.value) endInput.value = e.target.value;
+  applyHistoricalSelection();
+});
+
+document.getElementById('endDateInput').addEventListener('change', e => {
+  const startInput = document.getElementById('startDateInput');
+  if (startInput.value && e.target.value < startInput.value) startInput.value = e.target.value;
+  applyHistoricalSelection();
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1366,7 +1650,7 @@ document.getElementById('apiKeyInput').addEventListener('keydown', e => {
 // Refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
   if (mode === 'realtime') fetchLivePulse();
-  else if (mode === 'historical') applyHistoricalDate(document.getElementById('dateInput').value);
+  else if (mode === 'historical') applyHistoricalSelection();
 });
 
 // Auto-refresh every 30 min in real-time mode
@@ -1381,6 +1665,11 @@ setInterval(() => { if (mode === 'realtime') fetchLivePulse(); }, REFRESH_MS);
   await loadLocalConfig();
   restoreApiKey();
   await configureDatePicker();
+  const savedHistoricalWindow = localStorage.getItem('pulse_historical_window');
+  if (['day', 'week', 'month', 'custom'].includes(savedHistoricalWindow)) {
+    historicalWindow = savedHistoricalWindow;
+  }
+  document.getElementById('historyWindow').value = historicalWindow;
 
   const savedMode = localStorage.getItem('pulse_mode');
   if (savedMode === 'historical' || savedMode === 'realtime') {
@@ -1392,7 +1681,7 @@ setInterval(() => { if (mode === 'realtime') fetchLivePulse(); }, REFRESH_MS);
   syncModeUI();
 
   if (mode === 'historical') {
-    applyHistoricalDate(document.getElementById('dateInput').value);
+    applyHistoricalSelection();
   } else {
     fetchLivePulse();
   }

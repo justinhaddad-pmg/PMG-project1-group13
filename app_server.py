@@ -116,8 +116,22 @@ def keyword_matches(haystack, keyword):
     return re.search(rf"\b{re.escape(keyword)}\b", haystack) is not None
 
 
+def matched_keywords(text, pillar, limit=4):
+    haystack = str(text or "").lower().replace("_", " ")
+    matches = [
+        keyword
+        for keyword in PILLAR_KEYWORDS.get(pillar, [])
+        if keyword_matches(haystack, keyword)
+    ]
+    return matches[:limit]
+
+
 def yyyymmddhh(date_str, end=False):
     return date_str.replace("-", "") + ("235959" if end else "000000")
+
+
+def parse_iso_date(date_str):
+    return datetime.strptime(date_str, "%Y-%m-%d").date()
 
 
 def central_day_bounds(date_str):
@@ -125,6 +139,12 @@ def central_day_bounds(date_str):
     start = local_day.astimezone(UTC)
     end = (local_day + timedelta(days=1)).astimezone(UTC)
     return start, end
+
+
+def central_range_bounds(start_date_str, end_date_str):
+    local_start = datetime.strptime(start_date_str, "%Y-%m-%d").replace(tzinfo=CENTRAL)
+    local_end = datetime.strptime(end_date_str, "%Y-%m-%d").replace(tzinfo=CENTRAL) + timedelta(days=1)
+    return local_start.astimezone(UTC), local_end.astimezone(UTC)
 
 
 def iter_utc_date_weights(start_utc, end_utc):
@@ -141,7 +161,7 @@ def iter_utc_date_weights(start_utc, end_utc):
         cursor_date += timedelta(days=1)
 
 
-def gdelt_signal(date_str=None):
+def gdelt_signal(start_date=None, end_date=None):
     params = {
         "query": f"({GDELT_QUERY}) sourcecountry:US",
         "mode": "artlist",
@@ -149,8 +169,9 @@ def gdelt_signal(date_str=None):
         "maxrecords": "250",
         "sort": "datedesc",
     }
-    if date_str:
-        start_utc, end_utc = central_day_bounds(date_str)
+    if start_date:
+        end_date = end_date or start_date
+        start_utc, end_utc = central_range_bounds(start_date, end_date)
         params["STARTDATETIME"] = start_utc.strftime("%Y%m%d%H%M%S")
         params["ENDDATETIME"] = (end_utc - timedelta(seconds=1)).strftime("%Y%m%d%H%M%S")
     else:
@@ -158,28 +179,49 @@ def gdelt_signal(date_str=None):
 
     data = read_json_url(f"{GDELT_BASE}?{urlencode(params)}")
     raw, topics = blank_raw(), empty_topics()
+    candidates = {pillar: {} for pillar in PILLARS}
     for article in data.get("articles", []):
         title = article.get("title", "")
         pillar = classify(f"{title} {article.get('domain', '')}")
         if not pillar:
             continue
         raw[pillar] += 1
-        if len(topics[pillar]) < 5:
-            domain = article.get("domain") or "News"
-            topics[pillar].append({
-                "name": title[:60] + ("..." if len(title) > 60 else ""),
-                "heat": domain,
-                "source": domain,
-                "url": article.get("url", ""),
-                "description": f"News coverage from {domain}.",
-            })
+        domain = article.get("domain") or "News"
+        key = article.get("url") or title
+        current = candidates[pillar].setdefault(key, {
+            "name": title[:60] + ("..." if len(title) > 60 else ""),
+            "source": domain,
+            "url": article.get("url", ""),
+            "count": 0,
+            "keywords": matched_keywords(title, pillar),
+        })
+        current["count"] += 1
+
+    for pillar in PILLARS:
+        top = sorted(candidates[pillar].values(), key=lambda item: item["count"], reverse=True)[:5]
+        topics[pillar] = [
+            {
+                "name": item["name"],
+                "heat": f"{item['count']} article" + ("" if item["count"] == 1 else "s"),
+                "source": item["source"],
+                "url": item["url"],
+                "description": f"News coverage from {item['source']} during this historical window.",
+                "signalType": "News coverage",
+                "sourceDetail": f"GDELT matched U.S. news coverage from {item['source']}.",
+                "why": f"Ranked because this item appeared in {item['count']} matched news article" + ("" if item["count"] == 1 else "s") + " during the selected window.",
+                "keywords": item["keywords"],
+            }
+            for item in top
+        ]
     return {"scores": normalize(raw), "topics": topics}
 
 
-def wiki_signal(date_str):
+def wiki_signal(start_date, end_date=None):
     raw, topics = blank_raw(), empty_topics()
-    start_utc, end_utc = central_day_bounds(date_str)
+    end_date = end_date or start_date
+    start_utc, end_utc = central_range_bounds(start_date, end_date)
     today_utc = datetime.now(UTC).date()
+    candidates = {pillar: {} for pillar in PILLARS}
 
     for utc_day, weight in iter_utc_date_weights(start_utc, end_utc):
         if utc_day > today_utc:
@@ -196,15 +238,31 @@ def wiki_signal(date_str):
             views = page.get("views", 0)
             weighted_views = views * weight
             raw[pillar] += math.log10(weighted_views + 1)
-            if len(topics[pillar]) < 5:
-                readable_title = title.replace("_", " ")
-                topics[pillar].append({
-                    "name": readable_title,
-                    "heat": f"{round(weighted_views / 1000)}k views",
-                    "source": "Wikipedia",
-                    "url": f"https://en.wikipedia.org/wiki/{title}",
-                    "description": f"Wikipedia pageviews for {readable_title} during this date window.",
-                })
+            readable_title = title.replace("_", " ")
+            current = candidates[pillar].setdefault(title, {
+                "name": readable_title,
+                "views": 0,
+                "url": f"https://en.wikipedia.org/wiki/{title}",
+                "keywords": matched_keywords(title, pillar),
+            })
+            current["views"] += weighted_views
+
+    for pillar in PILLARS:
+        top = sorted(candidates[pillar].values(), key=lambda item: item["views"], reverse=True)[:5]
+        topics[pillar] = [
+            {
+                "name": item["name"],
+                "heat": f"{round(item['views'] / 1000)}k views",
+                "source": "Wikipedia",
+                "url": item["url"],
+                "description": f"Wikipedia pageviews for {item['name']} during this date window.",
+                "signalType": "Public curiosity",
+                "sourceDetail": "Wikipedia Pageviews measures how often people opened this article.",
+                "why": f"Ranked because it accumulated about {round(item['views'] / 1000)}k weighted pageviews during the selected window.",
+                "keywords": item["keywords"],
+            }
+            for item in top
+        ]
     return {"scores": normalize(raw), "topics": topics}
 
 
@@ -421,9 +479,16 @@ def normalize_topic(topic, fallback_source=""):
     if source == "Wikipedia":
         item.setdefault("url", wikipedia_url(name))
         item.setdefault("description", f"High Wikipedia pageview attention for {name}.")
+        item.setdefault("signalType", "Public curiosity")
+        item.setdefault("sourceDetail", "Wikipedia Pageviews measures article visits during the selected window.")
+        item.setdefault("why", f"Ranked because {name} drew elevated Wikipedia pageview attention in this pillar.")
     else:
         item.setdefault("url", "")
         item.setdefault("description", f"Trending item from {source or 'the historical signal set'}.")
+        item.setdefault("signalType", "News coverage")
+        item.setdefault("sourceDetail", f"Coverage signal from {source or 'the historical signal set'}.")
+        item.setdefault("why", f"Ranked because {name} appeared in the matched historical signal set for this pillar.")
+    item.setdefault("keywords", [])
     return item
 
 
@@ -494,6 +559,20 @@ def latest_available_historical_date():
 
     latest = date.today() - timedelta(days=1)
     earliest = date.today() - timedelta(days=365)
+    cache_dates = []
+    for key in load_cache():
+        parts = key.split(":")
+        for part in parts:
+            try:
+                cache_dates.append(parse_iso_date(part))
+            except Exception:
+                pass
+    if cache_dates:
+        earliest = min(earliest, min(cache_dates))
+        latest = max(cache_dates)
+        RANGE_CACHE = {"earliest": earliest.isoformat(), "latest": latest.isoformat()}
+        return RANGE_CACHE
+
     cursor = latest
     while cursor >= earliest:
         try:
@@ -508,11 +587,61 @@ def latest_available_historical_date():
     return RANGE_CACHE
 
 
-def pulse(mode, date_str):
+def resolve_historical_window(window, date_str, start_date, end_date):
+    range_info = latest_available_historical_date()
+    earliest = parse_iso_date(range_info["earliest"])
+    latest = parse_iso_date(range_info["latest"])
+    window = window or "day"
+
+    if window == "custom":
+        if not start_date or not end_date:
+            raise ValueError("Custom range requires start and end dates")
+        start = parse_iso_date(start_date)
+        end = parse_iso_date(end_date)
+    elif window == "week":
+        end = latest
+        start = end - timedelta(days=end.weekday())
+    elif window == "month":
+        end = latest
+        start = end.replace(day=1)
+    else:
+        end = parse_iso_date(date_str or latest.isoformat())
+        start = end
+
+    if start < earliest:
+        start = earliest
+    if end > latest:
+        end = latest
+    if start > end:
+        raise ValueError(f"Historical start date must be on or before end date")
+    if start < earliest or end > latest:
+        raise ValueError(f"Historical date must be between {earliest.isoformat()} and {latest.isoformat()}")
+
+    label = start.isoformat() if start == end else f"{start.isoformat()} to {end.isoformat()}"
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "label": label,
+        "window": window,
+        "earliest": earliest.isoformat(),
+        "latest": latest.isoformat(),
+    }
+
+
+def pulse(mode, date_str, window="day", start_date=None, end_date=None):
     global LIVE_CACHE
+    window_info = None
+    cache_key = None
     cache = load_cache() if mode == "historical" else None
-    if cache is not None and date_str in cache:
-        return normalize_result(cache[date_str])
+    if mode == "historical":
+        window_info = resolve_historical_window(window, date_str, start_date, end_date)
+        cache_key = f"{window_info['start']}:{window_info['end']}"
+        if cache is not None and cache_key in cache:
+            return normalize_result(cache[cache_key])
+        if cache is not None and window_info["start"] == window_info["end"] and window_info["start"] in cache:
+            cached = normalize_result(cache[window_info["start"]])
+            cached["window"] = window_info
+            return cached
 
     warnings = []
 
@@ -538,12 +667,12 @@ def pulse(mode, date_str):
         source = "YouTube"
     else:
         try:
-            gdelt = gdelt_signal(date_str)
+            gdelt = gdelt_signal(window_info["start"], window_info["end"])
         except Exception as exc:
             warnings.append(f"GDELT unavailable: {exc}")
             gdelt = None
         try:
-            wiki = wiki_signal(date_str)
+            wiki = wiki_signal(window_info["start"], window_info["end"])
         except Exception as exc:
             warnings.append(f"Wikipedia unavailable: {exc}")
             wiki = None
@@ -567,10 +696,11 @@ def pulse(mode, date_str):
         "topics": topics,
         "source": source,
         "warnings": warnings,
+        "window": window_info,
     }
 
     if cache is not None:
-        cache[date_str] = result
+        cache[cache_key] = result
         save_cache(cache)
     elif mode == "live":
         LIVE_CACHE = {"fetched_at": datetime.now(UTC), "result": result}
@@ -603,13 +733,10 @@ class Handler(SimpleHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             mode = qs.get("mode", ["live"])[0]
             date_str = qs.get("date", [date.today().isoformat()])[0]
-            if mode == "historical":
-                range_info = latest_available_historical_date()
-                earliest = range_info["earliest"]
-                latest = range_info["latest"]
-                if date_str < earliest or date_str > latest:
-                    raise ValueError(f"Historical date must be between {earliest} and {latest}")
-            body = json.dumps(pulse(mode, date_str)).encode("utf-8")
+            window = qs.get("window", ["day"])[0]
+            start_date = qs.get("start", [None])[0]
+            end_date = qs.get("end", [None])[0]
+            body = json.dumps(pulse(mode, date_str, window, start_date, end_date)).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "no-store")
