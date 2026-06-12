@@ -202,6 +202,29 @@
     }
     .status-bar .refresh-btn:hover { color: var(--text); border-color: rgba(116,199,170,0.32); }
 
+    .youtube-pause {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.48rem;
+      min-height: 38px;
+      padding: 0.42rem 0.64rem;
+      border: 1px solid rgba(222,202,172,0.14);
+      border-radius: 8px;
+      background: rgba(235,218,190,0.08);
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 850;
+      cursor: pointer;
+      user-select: none;
+    }
+    .youtube-pause input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .youtube-pause:hover { color: var(--text); border-color: rgba(116,199,170,0.28); }
+
     .main-grid {
       display: grid;
       grid-template-columns: minmax(620px, 1.35fr) minmax(380px, 0.75fr);
@@ -626,6 +649,10 @@
     <span id="statusText">Loading data...</span>
     <button class="refresh-btn" id="refreshBtn" title="Refresh data">Refresh</button>
   </div>
+  <label class="youtube-pause" title="Avoid automatic YouTube API calls while developing">
+    <input type="checkbox" id="pauseYoutubeInput">
+    <span>Pause YouTube</span>
+  </label>
   </div>
 
   <div class="main-grid">
@@ -766,6 +793,7 @@ let apiKey = '';
 let mode = 'realtime';
 let historicalWindow = 'day';
 let historicalRange = { earliest: '', latest: '' };
+let youtubePaused = true;
 let pillars = PILLAR_META.map(p => ({ ...p, score: 0 }));
 let displayScores = pillars.map(p => p.score);
 let currentTopics = Object.fromEntries(PILLAR_META.map(p => [p.label, []]));
@@ -1103,7 +1131,21 @@ function blendSignals(signals) {
   return Object.fromEntries(Object.entries(scores).map(([p, v]) => [p, Math.round(v)]));
 }
 
-async function fetchLivePulse() {
+function syncYoutubePauseUI() {
+  document.getElementById('pauseYoutubeInput').checked = youtubePaused;
+  localStorage.setItem('pulse_youtube_paused', youtubePaused ? '1' : '0');
+}
+
+function skipLivePulse() {
+  setLoading(false);
+  setStatus('live', 'YouTube refresh paused · switch to Historical or unpause to fetch live data');
+}
+
+async function fetchLivePulse({ force = false } = {}) {
+  if (youtubePaused && !force) {
+    skipLivePulse();
+    return;
+  }
   setLoading(true);
   try {
     const res = await fetch(apiUrl(`/api/pulse?mode=live&date=${todayISO()}`));
@@ -1531,7 +1573,7 @@ function initApiKey(key) {
   apiKey = key.trim();
   localStorage.setItem('yt_api_key', apiKey);
   document.getElementById('apiBanner').classList.add('hidden');
-  fetchLivePulse();
+  fetchLivePulse({ force: !youtubePaused });
 }
 
 document.getElementById('apiKeyBtn').addEventListener('click', () => {
@@ -1545,6 +1587,15 @@ document.getElementById('apiKeyInput').addEventListener('keydown', e => {
   }
 });
 
+document.getElementById('pauseYoutubeInput').addEventListener('change', e => {
+  youtubePaused = e.target.checked;
+  syncYoutubePauseUI();
+  if (mode === 'realtime') {
+    if (youtubePaused) skipLivePulse();
+    else fetchLivePulse({ force: true });
+  }
+});
+
 // Refresh button
 document.getElementById('refreshBtn').addEventListener('click', () => {
   if (mode === 'realtime') fetchLivePulse();
@@ -1552,7 +1603,7 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
 });
 
 // Auto-refresh every 30 min in real-time mode
-setInterval(() => { if (mode === 'realtime') fetchLivePulse(); }, REFRESH_MS);
+setInterval(() => { if (mode === 'realtime' && !youtubePaused) fetchLivePulse(); }, REFRESH_MS);
 
 // ═══════════════════════════════════════════════════════════════════════
 //  INIT
@@ -1563,6 +1614,8 @@ setInterval(() => { if (mode === 'realtime') fetchLivePulse(); }, REFRESH_MS);
   await loadLocalConfig();
   restoreApiKey();
   await configureDatePicker();
+  youtubePaused = localStorage.getItem('pulse_youtube_paused') !== '0';
+  syncYoutubePauseUI();
   const savedHistoricalWindow = localStorage.getItem('pulse_historical_window');
   if (['day', 'week', 'month', 'custom'].includes(savedHistoricalWindow)) {
     historicalWindow = savedHistoricalWindow;
