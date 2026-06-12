@@ -2,12 +2,16 @@
 import json
 import math
 import os
+import random
+import time
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs
 from urllib.request import urlopen, Request
 from zoneinfo import ZoneInfo
+from pytrends.request import TrendReq
+
 
 PILLARS = ["Politics", "Sports", "Entertainment", "Sci & Tech", "Business", "Lifestyle"]
 GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
@@ -31,6 +35,218 @@ PILLAR_KEYWORDS = {
     "Business": ["market", "stocks", "economy", "inflation", "crypto", "bitcoin", "federal reserve", "earnings", "tariff", "recession", "layoff", "wall street"],
     "Lifestyle": ["health", "wellness", "fashion", "travel", "food", "relationship", "fitness", "beauty", "recipe", "wedding", "home", "diet"],
 }
+
+GOOGLE_TRENDS_THEMES = [
+    {
+        "pillar": "Politics",
+        "theme": "Elections",
+        "keywords": {
+            "Presidential Election": 1.0,
+            "Election Results": 0.9,
+            "Presidential Debate": 0.9,
+            "Voting": 0.8,
+            "Electoral College": 0.7,
+        },
+    },
+    {
+        "pillar": "Politics",
+        "theme": "Policy Debates",
+        "keywords": {
+            "Immigration Policy": 1.0,
+            "Healthcare Policy": 0.9,
+            "Tax Policy": 0.9,
+            "Climate Policy": 0.8,
+            "Student Loan Forgiveness": 0.8,
+        },
+    },
+    {
+        "pillar": "Politics",
+        "theme": "National News",
+        "keywords": {
+            "Breaking News": 1.0,
+            "Supreme Court": 0.9,
+            "Congress": 0.8,
+            "Government Shutdown": 0.8,
+            "Protest": 0.7,
+        },
+    },
+    {
+        "pillar": "Sports",
+        "theme": "NBA & WNBA",
+        "keywords": {
+            "NBA Finals": 1.0,
+            "NBA Playoffs": 0.9,
+            "WNBA": 0.9,
+            "Caitlin Clark": 0.8,
+            "LeBron James": 0.7,
+        },
+    },
+    {
+        "pillar": "Sports",
+        "theme": "Super Bowl",
+        "keywords": {
+            "Super Bowl": 1.0,
+            "NFL Playoffs": 0.9,
+            "AFC Championship": 0.8,
+            "NFC Championship": 0.8,
+            "Halftime Show": 0.7,
+        },
+    },
+    {
+        "pillar": "Sports",
+        "theme": "March Madness",
+        "keywords": {
+            "March Madness": 1.0,
+            "NCAA Tournament": 0.9,
+            "Final Four": 0.8,
+            "Bracket": 0.7,
+            "College Basketball": 0.7,
+        },
+    },
+    {
+        "pillar": "Sports",
+        "theme": "Global Sports",
+        "keywords": {
+            "Club World Cup": 1.0,
+            "FIFA Club World Cup": 1.0,
+            "World Cup": 0.6,
+            "Team USA": 0.5,
+            "Lionel Messi": 0.5,
+        },
+    },
+    {
+        "pillar": "Entertainment",
+        "theme": "Music Culture",
+        "keywords": {
+            "Taylor Swift": 1.0,
+            "Drake": 0.9,
+            "Beyonce": 0.9,
+            "Spotify": 0.8,
+            "New Music Friday": 0.7,
+        },
+    },
+    {
+        "pillar": "Entertainment",
+        "theme": "Awards Shows",
+        "keywords": {
+            "Oscars": 1.0,
+            "Grammy Awards": 0.9,
+            "Emmy Awards": 0.8,
+            "Golden Globes": 0.8,
+            "Red Carpet": 0.7,
+        },
+    },
+    {
+        "pillar": "Entertainment",
+        "theme": "Viral Culture",
+        "keywords": {
+            "TikTok Trends": 1.0,
+            "Memes": 0.9,
+            "Viral Video": 0.9,
+            "Internet Trends": 0.8,
+            "Social Media Trend": 0.8,
+        },
+    },
+    {
+        "pillar": "Sci & Tech",
+        "theme": "AI Breakthroughs",
+        "keywords": {
+            "ChatGPT": 1.0,
+            "OpenAI": 0.9,
+            "Artificial Intelligence": 0.9,
+            "AI Tools": 0.8,
+            "Generative AI": 0.8,
+        },
+    },
+    {
+        "pillar": "Sci & Tech",
+        "theme": "Technology Launches",
+        "keywords": {
+            "Apple Event": 1.0,
+            "iPhone Launch": 0.9,
+            "WWDC": 0.9,
+            "Nvidia": 0.8,
+            "Consumer Electronics": 0.7,
+        },
+    },
+    {
+        "pillar": "Sci & Tech",
+        "theme": "Consumer Tech Culture",
+        "keywords": {
+            "Headphones": 1.0,
+            "Wearable Technology": 0.9,
+            "Gaming Console": 0.8,
+            "Virtual Reality": 0.8,
+            "Smart Glasses": 0.7,
+        },
+    },
+    {
+        "pillar": "Business",
+        "theme": "Markets & Economy",
+        "keywords": {
+            "Stock Market": 1.0,
+            "S&P 500": 0.9,
+            "Federal Reserve": 0.9,
+            "Recession": 0.8,
+            "Jobs Report": 0.8,
+        },
+    },
+    {
+        "pillar": "Business",
+        "theme": "Taxes & Personal Finance",
+        "keywords": {
+            "Tax Refund": 1.0,
+            "IRS": 0.9,
+            "Tax Filing": 0.9,
+            "TurboTax": 0.8,
+            "Personal Finance": 0.8,
+        },
+    },
+    {
+        "pillar": "Business",
+        "theme": "Small Business & Entrepreneurship",
+        "keywords": {
+            "Small Business": 1.0,
+            "Entrepreneurship": 0.9,
+            "Business Loan": 0.8,
+            "QuickBooks": 0.8,
+            "Self Employed": 0.7,
+        },
+    },
+    {
+        "pillar": "Lifestyle",
+        "theme": "Fitness & Performance",
+        "keywords": {
+            "Running Shoes": 1.0,
+            "Workout": 0.9,
+            "Marathon Training": 0.8,
+            "Fitness Tracker": 0.8,
+            "Athleisure": 0.7,
+        },
+    },
+    {
+        "pillar": "Lifestyle",
+        "theme": "Fashion & Style",
+        "keywords": {
+            "Fashion Trends": 1.0,
+            "Sneakers": 0.9,
+            "Streetwear": 0.8,
+            "Outfit Ideas": 0.8,
+            "Summer Fashion": 0.7,
+        },
+    },
+    {
+        "pillar": "Lifestyle",
+        "theme": "Travel",
+        "keywords": {
+            "Summer Travel": 1.0,
+            "Vacation": 0.9,
+            "Travel Deals": 0.8,
+            "Flights": 0.8,
+            "Hotels": 0.7,
+        },
+    },
+]
 
 UTC = ZoneInfo("UTC")
 CENTRAL = ZoneInfo("America/Chicago")
@@ -152,7 +368,7 @@ def iter_utc_date_weights(start_utc, end_utc):
     cursor_date = start_utc.date()
     end_date = end_utc.date()
     while cursor_date <= end_date:
-        day_start = datetime.combine(cursor_date, time.min, tzinfo=UTC)
+        day_start = datetime.combine(cursor_date, datetime_time.min, tzinfo=UTC)
         day_end = day_start + timedelta(days=1)
         overlap_start = max(start_utc, day_start)
         overlap_end = min(end_utc, day_end)
@@ -265,6 +481,122 @@ def wiki_signal(start_date, end_date=None):
         ]
     return {"scores": normalize(raw), "topics": topics}
 
+def google_trends_signal(start_date=None, end_date=None):
+    """
+    Google Trends historical signal.
+
+    Returns the same structure as gdelt_signal() and wiki_signal():
+    {
+        "scores": {pillar: score},
+        "topics": {pillar: [...]}
+    }
+    """
+    pytrends = TrendReq(hl="en-US", tz=360)
+
+    raw = blank_raw()
+    topics = empty_topics()
+    theme_rows = []
+
+    target_date = parse_iso_date(end_date or start_date or date.today().isoformat())
+
+    for config in GOOGLE_TRENDS_THEMES:
+        pillar = config["pillar"]
+        theme = config["theme"]
+        keywords = list(config["keywords"].keys())
+        weights = config["keywords"]
+        time.sleep(random.uniform(2.0, 4.0))
+
+        try:
+            pytrends.build_payload(
+                keywords,
+                timeframe="today 12-m",
+                geo="US"
+            )
+
+            data = pytrends.interest_over_time()
+
+            if data.empty:
+                continue
+
+            if "isPartial" in data.columns:
+                data = data.drop(columns=["isPartial"])
+
+            weighted_score = sum(
+                data[keyword] * weights[keyword]
+                for keyword in keywords
+            ) / sum(weights.values())
+
+            theme_avg = weighted_score.mean() or 1
+            normalized_series = weighted_score / theme_avg
+
+            closest_date = min(
+                normalized_series.index,
+                key=lambda d: abs(d.date() - target_date)
+            )
+
+            normalized_value = float(normalized_series.loc[closest_date])
+            raw[pillar] += normalized_value
+
+            top_keywords = (
+                data.loc[closest_date]
+                .sort_values(ascending=False)
+                .head(3)
+                .index
+                .tolist()
+            )
+
+            theme_rows.append({
+                "pillar": pillar,
+                "theme": theme,
+                "score": normalized_value,
+                "closest_date": closest_date,
+                "top_keywords": top_keywords,
+            })
+
+        except Exception as exc:
+            print(f"Google Trends unavailable for {pillar} → {theme}: {exc}")
+            continue
+
+    theme_counts = {pillar: 0 for pillar in PILLARS}
+
+    for row in theme_rows:
+        theme_counts[row["pillar"]] += 1
+
+    for pillar in PILLARS:
+        if theme_counts[pillar]:
+            raw[pillar] = raw[pillar] / theme_counts[pillar]
+
+    scores = normalize(raw)
+
+    for pillar in PILLARS:
+        top = sorted(
+            [row for row in theme_rows if row["pillar"] == pillar],
+            key=lambda row: row["score"],
+            reverse=True
+        )[:5]
+
+        topics[pillar] = [
+            {
+                "name": row["theme"],
+                "heat": f"{row['score']:.1f}x baseline",
+                "source": "Google Trends",
+                "url": "",
+                "description": (
+                    f"Google Trends theme signal for {row['theme']} "
+                    f"during the week of {row['closest_date'].date()}."
+                ),
+                "signalType": "Search interest",
+                "sourceDetail": "Google Trends normalized against each theme's 12-month average.",
+                "why": (
+                    f"Ranked because {row['theme']} was "
+                    f"{row['score']:.1f}x its normal Google search baseline."
+                ),
+                "keywords": row["top_keywords"],
+            }
+            for row in top
+        ]
+
+    return {"scores": scores, "topics": topics}
 
 def youtube_key():
     if os.environ.get("YOUTUBE_API_KEY"):
@@ -676,20 +1008,31 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         except Exception as exc:
             warnings.append(f"Wikipedia unavailable: {exc}")
             wiki = None
-        if not gdelt and not wiki:
+        try:
+            trends = google_trends_signal(window_info["start"], window_info["end"])
+        except Exception as exc:
+            warnings.append(f"Google Trends unavailable: {exc}")
+            trends = None
+        if not gdelt and not wiki and not trends:
             raise RuntimeError("; ".join(warnings) or "Historical data unavailable")
         scores = blend([
-            {"data": gdelt, "weight": 60},
-            {"data": wiki, "weight": 40},
+            {"data": trends, "weight": 50},
+            {"data": gdelt, "weight": 30},
+            {"data": wiki, "weight": 20},
         ])
         topics = merge_topics(
+            trends["topics"] if trends else None,
             gdelt["topics"] if gdelt else None,
             wiki["topics"] if wiki else None,
         )
         source = " + ".join([
-            name for name, data in [("GDELT", gdelt), ("Wikipedia", wiki)]
-            if data
-        ])
+            name for name, data in [
+                ("Google Trends", trends),
+                ("GDELT", gdelt),
+                ("Wikipedia", wiki),
+        ]
+    if data
+])
 
     result = {
         "scores": scores,
