@@ -745,6 +745,7 @@
     <span class="status-dot" id="statusDot"></span>
     <span id="statusText">Loading data...</span>
     <button class="refresh-btn" id="refreshBtn" title="Refresh data">Refresh</button>
+    <button class="refresh-btn" id="trendsRefreshBtn" title="Warm fresh Google Trends data for the selected historical range" hidden>Deep refresh Trends</button>
   </div>
   <label class="youtube-pause" title="Avoid automatic YouTube API calls while developing">
     <input type="checkbox" id="pauseYoutubeInput">
@@ -1444,13 +1445,15 @@ function syncModeUI() {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   });
   document.getElementById('datePicker').classList.toggle('visible', mode === 'historical');
+  document.getElementById('trendsRefreshBtn').hidden = mode !== 'historical';
   syncHistoricalWindowUI();
   syncRadarViewUI();
   localStorage.setItem('pulse_mode', mode);
 }
 
-function historicalPulseUrl() {
+function historicalPulseUrl({ trendsMode = 'cached' } = {}) {
   const params = new URLSearchParams({ mode: 'historical', window: historicalWindow });
+  params.set('trends', trendsMode);
   if (historicalWindow === 'custom') {
     params.set('start', document.getElementById('startDateInput').value);
     params.set('end', document.getElementById('endDateInput').value);
@@ -1471,10 +1474,10 @@ function historicalStatusLabel(data) {
   return `${windowLabel} · ${dateLabel} · ${data.source}`;
 }
 
-async function applyHistoricalSelection() {
+async function applyHistoricalSelection({ trendsMode = 'cached' } = {}) {
   setLoading(true);
   try {
-    const res = await fetch(historicalPulseUrl());
+    const res = await fetch(historicalPulseUrl({ trendsMode }));
     const data = await readPulseResponse(res);
     if (!res.ok) throw new Error(data.error || `Pulse API error ${res.status}`);
     applyScores(data.scores, data.topics, historicalStatusLabel(data), data.source, data);
@@ -1930,6 +1933,10 @@ document.getElementById('pauseYoutubeInput').addEventListener('change', e => {
 document.getElementById('refreshBtn').addEventListener('click', () => {
   if (mode === 'realtime') fetchLivePulse();
   else if (mode === 'historical') applyHistoricalSelection();
+});
+
+document.getElementById('trendsRefreshBtn').addEventListener('click', () => {
+  if (mode === 'historical') applyHistoricalSelection({ trendsMode: 'refresh' });
 });
 
 document.getElementById('aiRefreshBtn').addEventListener('click', requestAiAnalysis);

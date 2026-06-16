@@ -734,7 +734,7 @@ def fetch_trend_theme_row(pytrends, config, start_date, end_date, trends_cache):
         raise
 
 
-def google_trends_signal(start_date=None, end_date=None):
+def google_trends_signal(start_date=None, end_date=None, max_uncached=None):
     """
     Google Trends historical signal.
 
@@ -744,8 +744,9 @@ def google_trends_signal(start_date=None, end_date=None):
     """
     start_date = start_date or date.today().isoformat()
     end_date = end_date or start_date
+    max_uncached = GOOGLE_TRENDS_UNCACHED_MAX_PER_REQUEST if max_uncached is None else max_uncached
 
-    pytrends = TrendReq(hl="en-US", tz=360)
+    pytrends = None
     trends_cache = load_google_trends_cache()
 
     raw = blank_raw()
@@ -764,7 +765,7 @@ def google_trends_signal(start_date=None, end_date=None):
                 theme_rows.append(cached_row)
             continue
 
-        if uncached_fetches >= GOOGLE_TRENDS_UNCACHED_MAX_PER_REQUEST:
+        if uncached_fetches >= max_uncached:
             print("Google Trends uncached fetch cap reached; remaining themes will load from cache on later requests.")
             break
 
@@ -775,6 +776,8 @@ def google_trends_signal(start_date=None, end_date=None):
         time.sleep(delay)
 
         try:
+            if pytrends is None:
+                pytrends = TrendReq(hl="en-US", tz=360)
             row = fetch_trend_theme_row(pytrends, config, start_date, end_date, trends_cache)
             uncached_fetches += 1
             if not row:
@@ -795,6 +798,9 @@ def google_trends_signal(start_date=None, end_date=None):
     for pillar in PILLARS:
         if theme_counts[pillar]:
             raw[pillar] = raw[pillar] / theme_counts[pillar]
+
+    if not theme_rows:
+        return None
 
     scores = normalize(raw)
     window_label = start_date if start_date == end_date else f"{start_date} to {end_date}"
@@ -1395,14 +1401,14 @@ def resolve_historical_window(window, date_str, start_date, end_date):
     }
 
 
-def pulse(mode, date_str, window="day", start_date=None, end_date=None):
+def pulse(mode, date_str, window="day", start_date=None, end_date=None, trends_mode="cached"):
     global LIVE_CACHE
     window_info = None
     cache_key = None
     cache = load_cache() if mode == "historical" else None
     if mode == "historical":
         window_info = resolve_historical_window(window, date_str, start_date, end_date)
-        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v4"
+        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v4:trends={trends_mode}"
         if cache is not None and cache_key in cache:
             cached = cache[cache_key]
             if not any("unavailable" in warning.lower() for warning in cached.get("warnings", [])):
@@ -1444,7 +1450,10 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
             warnings.append(f"Wikipedia unavailable: {exc}")
             wiki = None
         try:
-            trends = google_trends_signal(window_info["start"], window_info["end"])
+            max_uncached = GOOGLE_TRENDS_UNCACHED_MAX_PER_REQUEST if trends_mode == "refresh" else 0
+            trends = google_trends_signal(window_info["start"], window_info["end"], max_uncached=max_uncached)
+            if trends is None and trends_mode != "refresh":
+                warnings.append("Google Trends cached data not available yet; use Deep refresh Trends to warm this range")
         except Exception as exc:
             warnings.append(f"Google Trends unavailable: {exc}")
             trends = None
@@ -1488,7 +1497,7 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         "window": window_info,
     }
 
-    if cache is not None and not any("unavailable" in warning.lower() for warning in warnings):
+    if cache is not None and not warnings:
         cache[cache_key] = result
         save_cache(cache)
     elif mode == "live":
@@ -1524,7 +1533,8 @@ class Handler(SimpleHTTPRequestHandler):
             window = qs.get("window", ["day"])[0]
             start_date = qs.get("start", [None])[0]
             end_date = qs.get("end", [None])[0]
-            self.send_json(200, pulse(mode, date_str, window, start_date, end_date))
+            trends_mode = qs.get("trends", ["cached"])[0]
+            self.send_json(200, pulse(mode, date_str, window, start_date, end_date, trends_mode))
         except Exception as exc:
             self.send_json(500, {"error": str(exc)})
 
