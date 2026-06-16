@@ -32,7 +32,9 @@ WIKI_MIN_REQUEST_DELAY_SECONDS = 0.3
 WIKI_MAX_RETRIES = 3
 RANGE_CACHE = None
 GOOGLE_TRENDS_BASELINE_DAYS = 90
-GOOGLE_TRENDS_THEMES_PER_PILLAR = 1
+GOOGLE_TRENDS_THEMES_PER_PILLAR = 2
+GOOGLE_TRENDS_UNCACHED_MAX_PER_REQUEST = 6
+GOOGLE_TRENDS_ERROR_CACHE_TTL_SECONDS = 6 * 60 * 60
 GOOGLE_TRENDS_MIN_DELAY_SECONDS = 4.0
 GOOGLE_TRENDS_MAX_DELAY_SECONDS = 7.0
 GOOGLE_TRENDS_MAX_RETRIES = 3
@@ -44,7 +46,14 @@ YOUTUBE_SEARCHES_PER_REFRESH = 3
 
 PILLAR_KEYWORDS = {
     "Politics": ["election", "congress", "senate", "president", "white house", "supreme court", "policy", "vote", "protest", "government", "trump", "biden"],
-    "Sports": ["sports", "nfl", "nba", "mlb", "nhl", "soccer", "football", "basketball", "baseball", "olympics", "world cup", "ufc", "game", "finals"],
+    "Sports": [
+        "sports", "nfl", "nba", "wnba", "mlb", "nhl", "soccer", "football", "basketball", "baseball",
+        "olympics", "world cup", "ufc", "game", "finals", "final four", "march madness", "ncaa tournament",
+        "college basketball", "women's basketball", "womens basketball", "women's college basketball",
+        "womens college basketball", "ncaa women's basketball", "ncaa womens basketball", "ncaaw",
+        "women's final four", "womens final four", "women's march madness", "womens march madness",
+        "wnba draft", "wnba season", "wnba standings",
+    ],
     "Entertainment": ["movie", "film", "music", "album", "celebrity", "streaming", "netflix", "disney", "actor", "singer", "concert", "meme", "viral"],
     "Sci & Tech": ["technology", "tech", "science", "ai", "artificial intelligence", "nasa", "space", "apple", "google", "microsoft", "tesla", "robot", "startup"],
     "Business": ["market", "stocks", "economy", "inflation", "crypto", "bitcoin", "federal reserve", "earnings", "tariff", "recession", "layoff", "wall street"],
@@ -83,6 +92,17 @@ GOOGLE_TRENDS_THEMES = [
             "Congress": 0.8,
             "Government Shutdown": 0.8,
             "Protest": 0.7,
+        },
+    },
+    {
+        "pillar": "Sports",
+        "theme": "Women's Basketball",
+        "keywords": {
+            "WNBA Draft": 1.0,
+            "Women's March Madness": 1.0,
+            "NCAA women's basketball": 1.0,
+            "Women's Final Four": 0.9,
+            "WNBA": 0.9,
         },
     },
     {
@@ -529,15 +549,19 @@ def wiki_signal(start_date, end_date=None):
     return {"scores": normalize(raw), "topics": topics}
 
 def historical_trends_configs():
-  """One primary theme per pillar keeps historical fetches to six API calls."""
-  per_pillar = {}
-  selected = []
+  """Pick themes round-robin so the first uncached pass covers every pillar."""
+  by_pillar = {pillar: [] for pillar in PILLARS}
   for config in GOOGLE_TRENDS_THEMES:
     pillar = config["pillar"]
-    if per_pillar.get(pillar, 0) >= GOOGLE_TRENDS_THEMES_PER_PILLAR:
-      continue
-    selected.append(config)
-    per_pillar[pillar] = per_pillar.get(pillar, 0) + 1
+    if len(by_pillar.get(pillar, [])) < GOOGLE_TRENDS_THEMES_PER_PILLAR:
+      by_pillar[pillar].append(config)
+
+  selected = []
+  for theme_index in range(GOOGLE_TRENDS_THEMES_PER_PILLAR):
+    for pillar in PILLARS:
+      pillar_configs = by_pillar.get(pillar, [])
+      if theme_index < len(pillar_configs):
+        selected.append(pillar_configs[theme_index])
   return selected
 
 
@@ -549,7 +573,7 @@ def google_trends_timeframe(start_date, end_date):
 
 
 def google_trends_cache_key(theme, start_date, end_date):
-  return f"{theme}|{start_date}|{end_date}"
+  return f"trends-v3|{theme}|{start_date}|{end_date}"
 
 
 def load_google_trends_cache():
@@ -587,6 +611,30 @@ def fetch_trends_interest(pytrends, keywords, timeframe):
         continue
       raise
   raise last_exc
+
+
+def google_trends_cached_row(config, start_date, end_date, trends_cache):
+    cache_key = google_trends_cache_key(config["theme"], start_date, end_date)
+    cached = trends_cache.get(cache_key)
+    if not cached:
+        return None
+
+    if cached.get("error"):
+        try:
+            failed_at = datetime.fromisoformat(cached.get("failed_at", "")).astimezone(UTC)
+            if (datetime.now(UTC) - failed_at).total_seconds() < GOOGLE_TRENDS_ERROR_CACHE_TTL_SECONDS:
+                return {"cached_error": True}
+        except Exception:
+            return {"cached_error": True}
+        trends_cache.pop(cache_key, None)
+        save_google_trends_cache(trends_cache)
+        return None
+
+    return {
+        "pillar": config["pillar"],
+        "theme": config["theme"],
+        **cached,
+    }
 
 
 def score_trends_theme(data, keywords, weights, start_date, end_date):
@@ -640,16 +688,6 @@ def fetch_trend_theme_row(pytrends, config, start_date, end_date, trends_cache):
     weights = config["keywords"]
     cache_key = google_trends_cache_key(theme, start_date, end_date)
 
-    cached = trends_cache.get(cache_key)
-    if cached:
-        if cached.get("error"):
-            return None
-        return {
-            "pillar": pillar,
-            "theme": theme,
-            **cached,
-        }
-
     timeframe = google_trends_timeframe(start_date, end_date)
     try:
         data = fetch_trends_interest(pytrends, keywords, timeframe)
@@ -673,8 +711,9 @@ def google_trends_signal(start_date=None, end_date=None):
     """
     Google Trends historical signal.
 
-    Fetches one theme per pillar for the selected date window only, with
-    per-theme disk caching and retry/backoff on rate limits.
+    Fetches up to two themes per pillar with disk caching. To avoid
+    Google Trends rate limits, each request only warms a small number
+    of uncached themes and reuses cached themes immediately.
     """
     start_date = start_date or date.today().isoformat()
     end_date = end_date or start_date
@@ -686,10 +725,22 @@ def google_trends_signal(start_date=None, end_date=None):
     topics = empty_topics()
     theme_rows = []
     rate_limit_hit = False
+    uncached_fetches = 0
 
     for config in historical_trends_configs():
         pillar = config["pillar"]
         theme = config["theme"]
+        cached_row = google_trends_cached_row(config, start_date, end_date, trends_cache)
+        if cached_row:
+            if not cached_row.get("cached_error"):
+                raw[pillar] += cached_row["score"]
+                theme_rows.append(cached_row)
+            continue
+
+        if uncached_fetches >= GOOGLE_TRENDS_UNCACHED_MAX_PER_REQUEST:
+            print("Google Trends uncached fetch cap reached; remaining themes will load from cache on later requests.")
+            break
+
         if rate_limit_hit:
             delay = GOOGLE_TRENDS_MAX_DELAY_SECONDS + random.uniform(3.0, 6.0)
         else:
@@ -698,11 +749,13 @@ def google_trends_signal(start_date=None, end_date=None):
 
         try:
             row = fetch_trend_theme_row(pytrends, config, start_date, end_date, trends_cache)
+            uncached_fetches += 1
             if not row:
                 continue
             raw[pillar] += row["score"]
             theme_rows.append(row)
         except Exception as exc:
+            uncached_fetches += 1
             if trends_rate_limited(exc):
                 rate_limit_hit = True
             print(f"Google Trends unavailable for {pillar} → {theme}: {exc}")
@@ -988,6 +1041,24 @@ def normalize_result(result):
             for topic in topics.get(pillar, [])
         ]
     result["topics"] = normalized
+    source_breakdown = result.get("sourceBreakdown") or {}
+    normalized_breakdown = {}
+    for key, source_result in source_breakdown.items():
+        if not isinstance(source_result, dict):
+            continue
+        source_topics = source_result.get("topics") or {}
+        normalized_breakdown[key] = {
+            **source_result,
+            "topics": {
+                pillar: [
+                    normalize_topic(topic, source_result.get("label") or source_result.get("source") or fallback_source)
+                    for topic in source_topics.get(pillar, [])
+                ]
+                for pillar in PILLARS
+            },
+        }
+    if normalized_breakdown:
+        result["sourceBreakdown"] = normalized_breakdown
     return result
 
 
@@ -1312,7 +1383,7 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
     cache = load_cache() if mode == "historical" else None
     if mode == "historical":
         window_info = resolve_historical_window(window, date_str, start_date, end_date)
-        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v1"
+        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v3"
         if cache is not None and cache_key in cache:
             cached = cache[cache_key]
             if not any("unavailable" in warning.lower() for warning in cached.get("warnings", [])):
@@ -1340,6 +1411,13 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         scores = yt["scores"]
         topics = yt["topics"]
         source = "YouTube"
+        source_breakdown = {
+            "youtube": {
+                "label": "YouTube",
+                "scores": yt["scores"],
+                "topics": yt["topics"],
+            }
+        }
     else:
         try:
             wiki = wiki_signal(window_info["start"], window_info["end"])
@@ -1368,11 +1446,25 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         ]
     if data
 ])
+        source_breakdown = {}
+        if trends:
+            source_breakdown["googleTrends"] = {
+                "label": "Google Trends",
+                "scores": trends["scores"],
+                "topics": trends["topics"],
+            }
+        if wiki:
+            source_breakdown["wikipedia"] = {
+                "label": "Wikipedia",
+                "scores": wiki["scores"],
+                "topics": wiki["topics"],
+            }
 
     result = {
         "scores": scores,
         "topics": topics,
         "source": source,
+        "sourceBreakdown": source_breakdown,
         "warnings": warnings,
         "window": window_info,
     }
