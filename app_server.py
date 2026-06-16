@@ -1086,16 +1086,23 @@ def fallback_analysis(payload, reason="Ollama is not available right now"):
 def build_analysis_prompt(payload):
     compact = compact_analysis_payload(payload)
     return f"""
-You are the concise analyst inside a cultural trend dashboard.
+You are a strategic analyst for a cultural trend dashboard used by brand marketers.
 
-Explain only what the provided dashboard data supports. Do not invent facts, dates, links, sources, or outside context.
-If a source is missing or warning exists, mention it as a caveat. Keep this useful for a non-technical marketing strategy user.
+Use only the provided dashboard data. Do not invent facts, dates, links, or outside context.
+If any source is missing or a warning exists, mention it clearly in caveats.
+
+Your job is to:
+- Explain what is trending in a way that is useful for brand strategy.
+- Highlight why each trend matters for audience attention, relevance, and campaign timing.
+- Call out brand implications such as sponsorship opportunities, message fit, and audience segments when supported by the data.
+- When the selected window is in March 2026 or the data shows sports-related topics, explicitly look for women's sports signals and explain why they may matter for brands.
+- Prefer clear, specific, practical language over generic commentary.
 
 Return valid JSON only, with this exact shape:
 {{
-  "headline": "short headline",
-  "summary": "2 short sentences explaining the chart",
-  "bullets": ["3-4 concise takeaways"],
+  "headline": "short, punchy headline",
+  "summary": "2-3 short sentences that explain the trend story and brand relevance",
+  "bullets": ["4-5 concise takeaways, each with a strategic brand lens"],
   "caveats": ["0-2 caveats about missing/limited data"]
 }}
 
@@ -1120,13 +1127,13 @@ def parse_ollama_json(text):
 def sanitize_analysis(analysis):
     analysis = analysis or {}
     headline = str(analysis.get("headline") or "Cultural pulse readout").strip()[:140]
-    summary = str(analysis.get("summary") or "").strip()[:700]
+    summary = str(analysis.get("summary") or "").strip()[:900]
     bullets = analysis.get("bullets") if isinstance(analysis.get("bullets"), list) else []
     caveats = analysis.get("caveats") if isinstance(analysis.get("caveats"), list) else []
     return {
         "headline": headline,
         "summary": summary,
-        "bullets": [str(item).strip()[:260] for item in bullets if str(item).strip()][:4],
+        "bullets": [str(item).strip()[:320] for item in bullets if str(item).strip()][:5],
         "caveats": [str(item).strip()[:240] for item in caveats if str(item).strip()][:3],
         "provider": analysis.get("provider") or "ollama",
         "model": analysis.get("model") or OLLAMA_MODEL,
@@ -1140,8 +1147,8 @@ def ollama_analysis(payload):
         "prompt": prompt,
         "stream": False,
         "options": {
-            "temperature": 0.2,
-            "num_predict": 420,
+            "temperature": 0.3,
+            "num_predict": 650,
         },
     }).encode("utf-8")
     request = Request(
