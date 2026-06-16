@@ -880,7 +880,14 @@ const PILLAR_META = [
 ];
 
 const PILLAR_KEYWORDS = {
-  'Politics': ['election', 'congress', 'senate', 'president', 'white house', 'supreme court', 'policy', 'vote', 'protest', 'government', 'trump', 'biden'],
+  'Politics': [
+    'election', 'congress', 'senate', 'president', 'white house', 'supreme court', 'policy', 'vote',
+    'protest', 'government', 'trump', 'biden', 'iran', 'iran war', 'iran conflict', 'iran usa war',
+    'iran us war', 'u.s. iran', 'us iran', 'united states iran', 'strait of hormuz', 'hormuz',
+    'persian gulf', 'airstrike', 'airstrikes', 'missile strike', 'drone strike', 'nuclear talks',
+    'nuclear program', 'khamenei', 'irgc', 'sanctions', 'ceasefire', 'blockade', 'naval blockade',
+    'middle east war',
+  ],
   'Sports': [
     'sports', 'nfl', 'nba', 'wnba', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'baseball',
     'olympics', 'world cup', 'ufc', 'game', 'finals', 'final four', 'march madness', 'ncaa tournament',
@@ -1172,6 +1179,13 @@ function emptyTopics() {
   return Object.fromEntries(PILLAR_META.map(p => [p.label, []]));
 }
 
+function formatViewCount(value) {
+  const views = Math.round(Number(value || 0));
+  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
+  if (views >= 1_000) return `${(views / 1_000).toFixed(1)}k views`;
+  return `${views} views`;
+}
+
 const LOCAL_API_ORIGIN = 'http://127.0.0.1:4174';
 
 function apiUrl(path) {
@@ -1279,7 +1293,7 @@ async function fetchWikipediaSignal(dateStr) {
     if (topics[pillar].length < 5) {
       topics[pillar].push({
         name: title.replaceAll('_', ' '),
-        heat: `${Math.round((page.views || 0) / 1000)}k views`,
+        heat: formatViewCount(page.views),
       });
     }
   }

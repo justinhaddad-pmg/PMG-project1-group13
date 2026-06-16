@@ -45,7 +45,14 @@ LIVE_STALE_CACHE_SECONDS = 86400
 YOUTUBE_SEARCHES_PER_REFRESH = 3
 
 PILLAR_KEYWORDS = {
-    "Politics": ["election", "congress", "senate", "president", "white house", "supreme court", "policy", "vote", "protest", "government", "trump", "biden"],
+    "Politics": [
+        "election", "congress", "senate", "president", "white house", "supreme court", "policy", "vote",
+        "protest", "government", "trump", "biden", "iran", "iran war", "iran conflict", "iran usa war",
+        "iran us war", "u.s. iran", "us iran", "united states iran", "strait of hormuz", "hormuz",
+        "persian gulf", "airstrike", "airstrikes", "missile strike", "drone strike", "nuclear talks",
+        "nuclear program", "khamenei", "irgc", "sanctions", "ceasefire", "blockade", "naval blockade",
+        "middle east war",
+    ],
     "Sports": [
         "sports", "nfl", "nba", "wnba", "mlb", "nhl", "soccer", "football", "basketball", "baseball",
         "olympics", "world cup", "ufc", "game", "finals", "final four", "march madness", "ncaa tournament",
@@ -61,6 +68,17 @@ PILLAR_KEYWORDS = {
 }
 
 GOOGLE_TRENDS_THEMES = [
+    {
+        "pillar": "Politics",
+        "theme": "Iran-U.S. War",
+        "keywords": {
+            "Iran war": 1.0,
+            "U.S. Iran war": 1.0,
+            "Strait of Hormuz": 1.0,
+            "Iran nuclear": 0.9,
+            "Khamenei": 0.8,
+        },
+    },
     {
         "pillar": "Politics",
         "theme": "Elections",
@@ -371,6 +389,15 @@ def matched_keywords(text, pillar, limit=4):
     return matches[:limit]
 
 
+def format_views(value):
+    value = int(round(value or 0))
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M views"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}k views"
+    return f"{value} views"
+
+
 def parse_iso_date(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
 
@@ -535,13 +562,13 @@ def wiki_signal(start_date, end_date=None):
         topics[pillar] = [
             {
                 "name": item["name"],
-                "heat": f"{round(item['views'] / 1000)}k views",
+                "heat": format_views(item["views"]),
                 "source": "Wikipedia",
                 "url": item["url"],
                 "description": f"Wikipedia pageviews for {item['name']} during this date window.",
                 "signalType": "Public curiosity",
                 "sourceDetail": "Wikipedia Pageviews measures how often people opened this article.",
-                "why": f"Ranked because it accumulated about {round(item['views'] / 1000)}k weighted pageviews during the selected window.",
+                "why": f"Ranked because it accumulated about {format_views(item['views'])} during the selected window.",
                 "keywords": item["keywords"],
             }
             for item in top
@@ -573,7 +600,7 @@ def google_trends_timeframe(start_date, end_date):
 
 
 def google_trends_cache_key(theme, start_date, end_date):
-  return f"trends-v3|{theme}|{start_date}|{end_date}"
+  return f"trends-v4|{theme}|{start_date}|{end_date}"
 
 
 def load_google_trends_cache():
@@ -817,14 +844,6 @@ def parse_youtube_datetime(value):
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
-
-
-def format_views(value):
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.1f}M views"
-    if value >= 1_000:
-        return f"{round(value / 1_000)}k views"
-    return f"{value} views"
 
 
 def format_age(published_at, now):
@@ -1383,7 +1402,7 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
     cache = load_cache() if mode == "historical" else None
     if mode == "historical":
         window_info = resolve_historical_window(window, date_str, start_date, end_date)
-        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v3"
+        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v4"
         if cache is not None and cache_key in cache:
             cached = cache[cache_key]
             if not any("unavailable" in warning.lower() for warning in cached.get("warnings", [])):
