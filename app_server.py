@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import hashlib
 import math
 import os
 import random
@@ -15,7 +16,6 @@ from pytrends.request import TrendReq
 
 
 PILLARS = ["Politics", "Sports", "Entertainment", "Sci & Tech", "Business", "Lifestyle"]
-GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
 WIKI_TOP_BASE = "https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access"
 YT_BASE = "https://www.googleapis.com/youtube/v3/videos"
 YT_SEARCH_BASE = "https://www.googleapis.com/youtube/v3/search"
@@ -23,6 +23,10 @@ CACHE_FILE = "historical_cache.json"
 LIVE_CACHE_FILE = "youtube_live_cache.json"
 GOOGLE_TRENDS_CACHE_FILE = "google_trends_cache.json"
 WIKI_CACHE_FILE = "wikipedia_cache.json"
+ANALYSIS_CACHE_FILE = "analysis_cache.json"
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3")
+OLLAMA_TIMEOUT_SECONDS = int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "90"))
 WIKI_DAILY_MAX_RANGE_DAYS = 7
 WIKI_MIN_REQUEST_DELAY_SECONDS = 0.3
 WIKI_MAX_RETRIES = 3
@@ -291,12 +295,6 @@ YOUTUBE_ROTATING_QUERIES = [
     "stock market",
 ]
 
-GDELT_QUERY = " OR ".join(
-    f'"{term}"' if " " in term else term
-    for term in sorted({term for terms in PILLAR_KEYWORDS.values() for term in terms})
-)
-
-
 def read_json_url(url):
     req = Request(url, headers={"User-Agent": "CulturalPulsePrototype/1.0"})
     with urlopen(req, timeout=20) as res:
@@ -353,10 +351,6 @@ def matched_keywords(text, pillar, limit=4):
     return matches[:limit]
 
 
-def yyyymmddhh(date_str, end=False):
-    return date_str.replace("-", "") + ("235959" if end else "000000")
-
-
 def parse_iso_date(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
 
@@ -386,61 +380,6 @@ def iter_utc_date_weights(start_utc, end_utc):
         if overlap_end > overlap_start:
             yield cursor_date, (overlap_end - overlap_start).total_seconds() / total
         cursor_date += timedelta(days=1)
-
-
-def gdelt_signal(start_date=None, end_date=None):
-    params = {
-        "query": f"({GDELT_QUERY}) sourcecountry:US",
-        "mode": "artlist",
-        "format": "json",
-        "maxrecords": "250",
-        "sort": "datedesc",
-    }
-    if start_date:
-        end_date = end_date or start_date
-        start_utc, end_utc = central_range_bounds(start_date, end_date)
-        params["STARTDATETIME"] = start_utc.strftime("%Y%m%d%H%M%S")
-        params["ENDDATETIME"] = (end_utc - timedelta(seconds=1)).strftime("%Y%m%d%H%M%S")
-    else:
-        params["timespan"] = "24h"
-
-    data = read_json_url(f"{GDELT_BASE}?{urlencode(params)}")
-    raw, topics = blank_raw(), empty_topics()
-    candidates = {pillar: {} for pillar in PILLARS}
-    for article in data.get("articles", []):
-        title = article.get("title", "")
-        pillar = classify(f"{title} {article.get('domain', '')}")
-        if not pillar:
-            continue
-        raw[pillar] += 1
-        domain = article.get("domain") or "News"
-        key = article.get("url") or title
-        current = candidates[pillar].setdefault(key, {
-            "name": title[:60] + ("..." if len(title) > 60 else ""),
-            "source": domain,
-            "url": article.get("url", ""),
-            "count": 0,
-            "keywords": matched_keywords(title, pillar),
-        })
-        current["count"] += 1
-
-    for pillar in PILLARS:
-        top = sorted(candidates[pillar].values(), key=lambda item: item["count"], reverse=True)[:5]
-        topics[pillar] = [
-            {
-                "name": item["name"],
-                "heat": f"{item['count']} article" + ("" if item["count"] == 1 else "s"),
-                "source": item["source"],
-                "url": item["url"],
-                "description": f"News coverage from {item['source']} during this historical window.",
-                "signalType": "News coverage",
-                "sourceDetail": f"GDELT matched U.S. news coverage from {item['source']}.",
-                "why": f"Ranked because this item appeared in {item['count']} matched news article" + ("" if item["count"] == 1 else "s") + " during the selected window.",
-                "keywords": item["keywords"],
-            }
-            for item in top
-        ]
-    return {"scores": normalize(raw), "topics": topics}
 
 
 def wiki_http_rate_limited(exc):
@@ -1052,6 +991,192 @@ def normalize_result(result):
     return result
 
 
+def load_analysis_cache():
+    try:
+        with open(ANALYSIS_CACHE_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_analysis_cache(cache):
+    tmp = f"{ANALYSIS_CACHE_FILE}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(cache, f)
+    os.replace(tmp, ANALYSIS_CACHE_FILE)
+
+
+def compact_topics_for_analysis(topics):
+    compact = {}
+    topics = topics or {}
+    for pillar in PILLARS:
+        compact[pillar] = []
+        for item in topics.get(pillar, [])[:4]:
+            compact[pillar].append({
+                "name": str(item.get("name", ""))[:120],
+                "heat": str(item.get("heat", ""))[:80],
+                "source": str(item.get("source", ""))[:80],
+                "description": str(item.get("description", ""))[:220],
+            })
+    return compact
+
+
+def compact_analysis_payload(payload):
+    payload = payload or {}
+    scores = payload.get("scores") or {}
+    compact_scores = {
+        pillar: int(round(float(scores.get(pillar, 0) or 0)))
+        for pillar in PILLARS
+    }
+    return {
+        "mode": str(payload.get("mode") or "historical")[:30],
+        "source": str(payload.get("source") or "Unknown")[:160],
+        "window": payload.get("window") if isinstance(payload.get("window"), dict) else None,
+        "scores": compact_scores,
+        "topics": compact_topics_for_analysis(payload.get("topics")),
+        "warnings": [str(warning)[:220] for warning in (payload.get("warnings") or [])[:5]],
+    }
+
+
+def analysis_cache_key(payload):
+    stable = {
+        "model": OLLAMA_MODEL,
+        "payload": compact_analysis_payload(payload),
+    }
+    encoded = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def top_analysis_pillars(payload, limit=3):
+    scores = payload.get("scores") or {}
+    return sorted(PILLARS, key=lambda pillar: scores.get(pillar, 0), reverse=True)[:limit]
+
+
+def fallback_analysis(payload, reason="Ollama is not available right now"):
+    compact = compact_analysis_payload(payload)
+    top_pillars = top_analysis_pillars(compact)
+    first = top_pillars[0] if top_pillars else "the dashboard"
+    source = compact.get("source") or "the loaded data"
+    summary = (
+        f"{first} is the strongest visible signal in this view. "
+        f"The readout is based on {source}, using the scores and topic lists already loaded in the dashboard."
+    )
+    bullets = []
+    for pillar in top_pillars:
+        topic_names = [
+            topic["name"]
+            for topic in compact["topics"].get(pillar, [])
+            if topic.get("name")
+        ][:3]
+        topic_text = ", ".join(topic_names) if topic_names else "no specific topics listed"
+        bullets.append(f"{pillar} scored {compact['scores'].get(pillar, 0)} with drivers including {topic_text}.")
+    caveats = compact.get("warnings") or []
+    if reason:
+        caveats = [reason, *caveats]
+    return {
+        "headline": f"{first} is leading the cultural mix",
+        "summary": summary,
+        "bullets": bullets[:4],
+        "caveats": caveats[:3],
+        "provider": "template",
+        "model": "fallback",
+    }
+
+
+def build_analysis_prompt(payload):
+    compact = compact_analysis_payload(payload)
+    return f"""
+You are the concise analyst inside a cultural trend dashboard.
+
+Explain only what the provided dashboard data supports. Do not invent facts, dates, links, sources, or outside context.
+If a source is missing or warning exists, mention it as a caveat. Keep this useful for a non-technical marketing strategy user.
+
+Return valid JSON only, with this exact shape:
+{{
+  "headline": "short headline",
+  "summary": "2 short sentences explaining the chart",
+  "bullets": ["3-4 concise takeaways"],
+  "caveats": ["0-2 caveats about missing/limited data"]
+}}
+
+Dashboard data:
+{json.dumps(compact, indent=2)}
+""".strip()
+
+
+def parse_ollama_json(text):
+    text = (text or "").strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        return json.loads(text[start:end + 1])
+    raise ValueError("Ollama did not return JSON")
+
+
+def sanitize_analysis(analysis):
+    analysis = analysis or {}
+    headline = str(analysis.get("headline") or "Cultural pulse readout").strip()[:140]
+    summary = str(analysis.get("summary") or "").strip()[:700]
+    bullets = analysis.get("bullets") if isinstance(analysis.get("bullets"), list) else []
+    caveats = analysis.get("caveats") if isinstance(analysis.get("caveats"), list) else []
+    return {
+        "headline": headline,
+        "summary": summary,
+        "bullets": [str(item).strip()[:260] for item in bullets if str(item).strip()][:4],
+        "caveats": [str(item).strip()[:240] for item in caveats if str(item).strip()][:3],
+        "provider": analysis.get("provider") or "ollama",
+        "model": analysis.get("model") or OLLAMA_MODEL,
+    }
+
+
+def ollama_analysis(payload):
+    prompt = build_analysis_prompt(payload)
+    body = json.dumps({
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "num_predict": 420,
+        },
+    }).encode("utf-8")
+    request = Request(
+        f"{OLLAMA_BASE_URL}/api/generate",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    analysis = parse_ollama_json(data.get("response", ""))
+    analysis["provider"] = "ollama"
+    analysis["model"] = OLLAMA_MODEL
+    return sanitize_analysis(analysis)
+
+
+def analyze_pulse(payload):
+    cache_key = analysis_cache_key(payload)
+    cache = load_analysis_cache()
+    cached = cache.get(cache_key)
+    if cached:
+        cached["cached"] = True
+        return cached
+
+    try:
+        result = ollama_analysis(payload)
+    except Exception as exc:
+        result = fallback_analysis(payload, f"Ollama unavailable: {exc}")
+    result["cached"] = False
+    if result.get("provider") == "ollama":
+        cache[cache_key] = result
+        save_analysis_cache(cache)
+    return result
+
+
 def load_cache():
     try:
         with open(CACHE_FILE, "r") as f:
@@ -1180,15 +1305,11 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
     cache = load_cache() if mode == "historical" else None
     if mode == "historical":
         window_info = resolve_historical_window(window, date_str, start_date, end_date)
-        cache_key = f"{window_info['start']}:{window_info['end']}"
+        cache_key = f"{window_info['start']}:{window_info['end']}:sources=wiki-trends-v1"
         if cache is not None and cache_key in cache:
             cached = cache[cache_key]
             if not any("unavailable" in warning.lower() for warning in cached.get("warnings", [])):
                 return normalize_result(cached)
-        if cache is not None and window_info["start"] == window_info["end"] and window_info["start"] in cache:
-            cached = normalize_result(cache[window_info["start"]])
-            cached["window"] = window_info
-            return cached
 
     warnings = []
 
@@ -1214,11 +1335,6 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         source = "YouTube"
     else:
         try:
-            gdelt = gdelt_signal(window_info["start"], window_info["end"])
-        except Exception as exc:
-            warnings.append(f"GDELT unavailable: {exc}")
-            gdelt = None
-        try:
             wiki = wiki_signal(window_info["start"], window_info["end"])
         except Exception as exc:
             warnings.append(f"Wikipedia unavailable: {exc}")
@@ -1228,22 +1344,19 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         except Exception as exc:
             warnings.append(f"Google Trends unavailable: {exc}")
             trends = None
-        if not gdelt and not wiki and not trends:
+        if not wiki and not trends:
             raise RuntimeError("; ".join(warnings) or "Historical data unavailable")
         scores = blend([
-            {"data": trends, "weight": 50},
-            {"data": gdelt, "weight": 30},
-            {"data": wiki, "weight": 20},
+            {"data": trends, "weight": 60},
+            {"data": wiki, "weight": 40},
         ])
         topics = merge_topics(
             trends["topics"] if trends else None,
-            gdelt["topics"] if gdelt else None,
             wiki["topics"] if wiki else None,
         )
         source = " + ".join([
             name for name, data in [
                 ("Google Trends", trends),
-                ("GDELT", gdelt),
                 ("Wikipedia", wiki),
         ]
     if data
@@ -1268,22 +1381,21 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def send_json(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/range":
             try:
-                body = json.dumps(latest_available_historical_date()).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(body)
+                self.send_json(200, latest_available_historical_date())
             except Exception as exc:
-                body = json.dumps({"error": str(exc)}).encode("utf-8")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(body)
+                self.send_json(500, {"error": str(exc)})
             return
         if parsed.path != "/api/pulse":
             return super().do_GET()
@@ -1294,18 +1406,24 @@ class Handler(SimpleHTTPRequestHandler):
             window = qs.get("window", ["day"])[0]
             start_date = qs.get("start", [None])[0]
             end_date = qs.get("end", [None])[0]
-            body = json.dumps(pulse(mode, date_str, window, start_date, end_date)).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(200, pulse(mode, date_str, window, start_date, end_date))
         except Exception as exc:
-            body = json.dumps({"error": str(exc)}).encode("utf-8")
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(500, {"error": str(exc)})
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/analysis":
+            self.send_json(404, {"error": "Not found"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > 1_000_000:
+                self.send_json(413, {"error": "Analysis payload is too large"})
+                return
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            self.send_json(200, analyze_pulse(payload))
+        except Exception as exc:
+            self.send_json(500, {"error": str(exc)})
 
 
 if __name__ == "__main__":

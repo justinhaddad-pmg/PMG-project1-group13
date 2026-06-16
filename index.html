@@ -323,6 +323,88 @@
       color: var(--faint); margin-bottom: 0.85rem;
     }
 
+    .ai-card {
+      background:
+        linear-gradient(180deg, rgba(80, 60, 43, 0.86), rgba(56, 41, 30, 0.86)),
+        radial-gradient(circle at top right, rgba(116,199,170,0.10), transparent 18rem);
+    }
+    .ai-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      margin-bottom: 0.75rem;
+    }
+    .ai-card-head h3 { margin-bottom: 0; }
+    .ai-refresh {
+      border: 1px solid rgba(116,199,170,0.28);
+      border-radius: 8px;
+      background: rgba(116,199,170,0.10);
+      color: var(--accent);
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 900;
+      padding: 0.42rem 0.62rem;
+      cursor: pointer;
+    }
+    .ai-refresh:hover { background: rgba(116,199,170,0.16); }
+    .ai-status {
+      color: var(--faint);
+      font-size: 0.72rem;
+      font-weight: 800;
+      margin-bottom: 0.7rem;
+    }
+    .ai-headline {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.18rem;
+      line-height: 1.1;
+      color: var(--text);
+      margin-bottom: 0.6rem;
+    }
+    .ai-summary {
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.55;
+    }
+    .ai-list {
+      list-style: none;
+      display: grid;
+      gap: 0.52rem;
+      margin-top: 0.75rem;
+    }
+    .ai-list li {
+      position: relative;
+      color: #eadcc8;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      padding-left: 0.95rem;
+    }
+    .ai-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.52rem;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 14px rgba(116,199,170,0.5);
+    }
+    .ai-caveats {
+      margin-top: 0.75rem;
+      padding-top: 0.7rem;
+      border-top: 1px solid rgba(222,202,172,0.12);
+      color: var(--faint);
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+    .ai-placeholder {
+      color: var(--faint);
+      font-size: 0.82rem;
+      line-height: 1.5;
+      font-style: italic;
+    }
+
     .slider-row {
       display: grid;
       grid-template-columns: 10px 92px minmax(72px, 1fr) 34px;
@@ -603,7 +685,7 @@
 
   <header>
     <h1>The Cultural Pulse</h1>
-    <p class="subtitle">What's dominating the national conversation — powered by news, search curiosity, and video momentum</p>
+    <p class="subtitle">What's dominating the national conversation — powered by search curiosity, Wikipedia attention, and video momentum</p>
   </header>
 
   <!-- API key banner -->
@@ -611,7 +693,7 @@
     <span class="banner-icon">🔑</span>
     <span class="banner-text">
       Enter your free <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3 key</a> to add live video momentum.
-      News and Wikipedia signals work without a key.
+      Historical search and Wikipedia signals work without a key.
     </span>
     <div class="api-key-form">
       <input type="text" id="apiKeyInput" placeholder="AIza..." autocomplete="off" spellcheck="false">
@@ -677,6 +759,16 @@
         <h3>Pillar Scores</h3>
         <div id="sliders"></div>
       </div>
+      <div class="panel-card ai-card" id="aiCard">
+        <div class="ai-card-head">
+          <h3>AI Readout</h3>
+          <button class="ai-refresh" id="aiRefreshBtn" type="button">Analyze</button>
+        </div>
+        <p class="ai-status" id="aiStatus">Waiting for chart data</p>
+        <div id="aiBody">
+          <p class="ai-placeholder">Once the dashboard loads, Ollama will explain the strongest pillars and the topics driving them.</p>
+        </div>
+      </div>
       <div class="panel-card drilldown empty" id="drilldown">
         <h3>Pillar Deep Dive</h3>
         <div id="ddContent">
@@ -687,8 +779,8 @@
   </div>
 
   <p class="data-source">
-    Data: <a href="https://www.gdeltproject.org/" target="_blank">GDELT</a> ·
-    <a href="https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html" target="_blank">Wikipedia Pageviews</a> ·
+    Data: <a href="https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html" target="_blank">Wikipedia Pageviews</a> ·
+    Google Trends ·
     <a href="https://developers.google.com/youtube/v3" target="_blank">YouTube Data API v3</a>
   </p>
 
@@ -742,7 +834,6 @@
 //  CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════
 const YT_BASE = 'https://www.googleapis.com/youtube/v3';
-const GDELT_BASE = 'https://api.gdeltproject.org/api/v2/doc/doc';
 const WIKI_TOP_BASE = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access';
 const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -782,10 +873,6 @@ const PILLAR_KEYWORDS = {
   'Lifestyle': ['health', 'wellness', 'fashion', 'travel', 'food', 'relationship', 'fitness', 'beauty', 'recipe', 'wedding', 'home', 'diet'],
 };
 
-const GDELT_QUERY = [
-  ...new Set(Object.values(PILLAR_KEYWORDS).flat())
-].map(term => term.includes(' ') ? `"${term}"` : term).join(' OR ');
-
 // ═══════════════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════════════
@@ -798,9 +885,12 @@ let pillars = PILLAR_META.map(p => ({ ...p, score: 0 }));
 let displayScores = pillars.map(p => p.score);
 let currentTopics = Object.fromEntries(PILLAR_META.map(p => [p.label, []]));
 let currentSource = '';
+let currentWindow = null;
+let currentWarnings = [];
 let hoveredIndex = -1;
 let selectedIndex = -1;
 let animFrame = null;
+let analysisRequestId = 0;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CANVAS
@@ -915,10 +1005,6 @@ function setStatus(state, text) {
 function setLoading(on) {
   document.getElementById('loadingOverlay').classList.toggle('show', on);
   setStatus(on ? 'loading' : '', on ? 'Fetching cultural signals…' : '');
-}
-
-function yyyymmddhh(dateStr, endOfDay) {
-  return dateStr.replaceAll('-', '') + (endOfDay ? '235959' : '000000');
 }
 
 function yesterdayISO() {
@@ -1043,44 +1129,6 @@ async function fetchYouTubeSignal() {
   return { scores: normalizeRaw(pillarRaw), topics };
 }
 
-async function fetchGdeltSignal(dateStr) {
-  const params = new URLSearchParams({
-    query: `(${GDELT_QUERY}) sourcecountry:US`,
-    mode: 'artlist',
-    format: 'json',
-    maxrecords: '250',
-    sort: 'datedesc',
-  });
-
-  if (dateStr) {
-    params.set('STARTDATETIME', yyyymmddhh(dateStr, false));
-    params.set('ENDDATETIME', yyyymmddhh(dateStr, true));
-  } else {
-    params.set('timespan', '24h');
-  }
-
-  const res = await fetch(`${GDELT_BASE}?${params}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(`GDELT error ${res.status}`);
-
-  const raw = blankRaw();
-  const topics = emptyTopics();
-  for (const article of data.articles || []) {
-    const title = article.title || '';
-    const pillar = classifyPillar(`${title} ${article.domain || ''}`);
-    if (!pillar) continue;
-    raw[pillar] += 1;
-    if (topics[pillar].length < 5) {
-      topics[pillar].push({
-        name: title.length > 60 ? title.slice(0, 60) + '...' : title,
-        heat: article.domain || 'News',
-      });
-    }
-  }
-
-  return { scores: normalizeRaw(raw), topics };
-}
-
 async function fetchWikipediaSignal(dateStr) {
   const wikiDate = dateStr === todayISO() ? yesterdayISO() : dateStr;
   const [year, month, day] = wikiDate.split('-');
@@ -1151,7 +1199,7 @@ async function fetchLivePulse({ force = false } = {}) {
     const res = await fetch(apiUrl(`/api/pulse?mode=live&date=${todayISO()}`));
     const data = await readPulseResponse(res);
     if (!res.ok) throw new Error(data.error || `Pulse API error ${res.status}`);
-    applyScores(data.scores, data.topics, `Live · ${data.source}`, data.source);
+    applyScores(data.scores, data.topics, `Live · ${data.source}`, data.source, data);
   } catch (err) {
     setLoading(false);
     setStatus('error', `Live data error — ${err.message}`);
@@ -1159,19 +1207,22 @@ async function fetchLivePulse({ force = false } = {}) {
   }
 }
 
-function applyScores(scoreMap, topicsMap, statusMsg, source = '') {
+function applyScores(scoreMap, topicsMap, statusMsg, source = '', pulseData = {}) {
   pillars.forEach(p => { if (scoreMap[p.label] !== undefined) p.score = scoreMap[p.label]; });
   currentTopics = topicsMap;
   currentSource = source;
+  currentWindow = pulseData.window || null;
+  currentWarnings = Array.isArray(pulseData.warnings) ? pulseData.warnings : [];
   buildSliders();
   kickAnim();
   setLoading(false);
   setStatus('live', statusMsg || 'Live data loaded');
   if (selectedIndex >= 0) renderDrilldown(selectedIndex, true);
+  requestAiAnalysis();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  HISTORICAL DATA  (GDELT + Wikipedia Pageviews)
+//  HISTORICAL DATA  (Google Trends + Wikipedia Pageviews)
 // ═══════════════════════════════════════════════════════════════════════
 function todayISO() {
   const d = new Date();
@@ -1269,7 +1320,7 @@ async function applyHistoricalSelection() {
     const res = await fetch(historicalPulseUrl());
     const data = await readPulseResponse(res);
     if (!res.ok) throw new Error(data.error || `Pulse API error ${res.status}`);
-    applyScores(data.scores, data.topics, historicalStatusLabel(data), data.source);
+    applyScores(data.scores, data.topics, historicalStatusLabel(data), data.source, data);
   } catch (err) {
     setLoading(false);
     setStatus('error', `Historical data error — ${err.message}`);
@@ -1282,7 +1333,75 @@ async function readPulseResponse(res) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error('Open the app from http://127.0.0.1:4174/ so /api/pulse returns real data.');
+    throw new Error('Open the app from http://127.0.0.1:4174/ so local API requests return JSON.');
+  }
+}
+
+function analysisPayload() {
+  return {
+    mode,
+    source: currentSource,
+    window: currentWindow,
+    warnings: currentWarnings,
+    scores: Object.fromEntries(pillars.map(p => [p.label, Math.round(p.score)])),
+    topics: currentTopics,
+  };
+}
+
+function setAiStatus(text) {
+  document.getElementById('aiStatus').textContent = text;
+}
+
+function renderAiPlaceholder(message) {
+  document.getElementById('aiBody').innerHTML = `<p class="ai-placeholder">${escapeHtml(message)}</p>`;
+}
+
+function renderAiAnalysis(analysis) {
+  const bullets = Array.isArray(analysis.bullets) ? analysis.bullets : [];
+  const caveats = Array.isArray(analysis.caveats) ? analysis.caveats : [];
+  const bulletHtml = bullets.length
+    ? `<ul class="ai-list">${bullets.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+    : '';
+  const caveatHtml = caveats.length
+    ? `<div class="ai-caveats">${caveats.map(item => `<div>${escapeHtml(item)}</div>`).join('')}</div>`
+    : '';
+  document.getElementById('aiBody').innerHTML = `
+    <div class="ai-headline">${escapeHtml(analysis.headline || 'Cultural pulse readout')}</div>
+    <p class="ai-summary">${escapeHtml(analysis.summary || 'No analysis text returned.')}</p>
+    ${bulletHtml}
+    ${caveatHtml}`;
+  const provider = analysis.provider === 'ollama' ? `Ollama · ${analysis.model || 'local model'}` : 'Template fallback';
+  const cached = analysis.cached ? ' · cached' : '';
+  setAiStatus(`${provider}${cached}`);
+}
+
+async function requestAiAnalysis() {
+  const payload = analysisPayload();
+  const hasScores = Object.values(payload.scores).some(score => score > 0);
+  if (!hasScores) {
+    setAiStatus('Waiting for chart data');
+    renderAiPlaceholder('Load real-time or historical data to generate an AI explanation.');
+    return;
+  }
+
+  const requestId = ++analysisRequestId;
+  setAiStatus('Ollama is analyzing the visible dashboard...');
+  renderAiPlaceholder('Reading the pillar scores and topic drivers.');
+  try {
+    const res = await fetch(apiUrl('/api/analysis'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const analysis = await readPulseResponse(res);
+    if (requestId !== analysisRequestId) return;
+    if (!res.ok) throw new Error(analysis.error || `Analysis API error ${res.status}`);
+    renderAiAnalysis(analysis);
+  } catch (err) {
+    if (requestId !== analysisRequestId) return;
+    setAiStatus('AI analysis unavailable');
+    renderAiPlaceholder(`Start Ollama locally, then click Analyze. Details: ${err.message}`);
+    console.error(err);
   }
 }
 
@@ -1601,6 +1720,8 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
   if (mode === 'realtime') fetchLivePulse();
   else if (mode === 'historical') applyHistoricalSelection();
 });
+
+document.getElementById('aiRefreshBtn').addEventListener('click', requestAiAnalysis);
 
 // Auto-refresh every 30 min in real-time mode
 setInterval(() => { if (mode === 'realtime' && !youtubePaused) fetchLivePulse(); }, REFRESH_MS);
