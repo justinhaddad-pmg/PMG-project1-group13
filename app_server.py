@@ -5,6 +5,7 @@ import os
 import random
 import time
 import re
+import calendar
 from datetime import date, datetime, time as datetime_time, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -20,7 +21,17 @@ YT_BASE = "https://www.googleapis.com/youtube/v3/videos"
 YT_SEARCH_BASE = "https://www.googleapis.com/youtube/v3/search"
 CACHE_FILE = "historical_cache.json"
 LIVE_CACHE_FILE = "youtube_live_cache.json"
+GOOGLE_TRENDS_CACHE_FILE = "google_trends_cache.json"
+WIKI_CACHE_FILE = "wikipedia_cache.json"
+WIKI_DAILY_MAX_RANGE_DAYS = 7
+WIKI_MIN_REQUEST_DELAY_SECONDS = 0.3
+WIKI_MAX_RETRIES = 3
 RANGE_CACHE = None
+GOOGLE_TRENDS_BASELINE_DAYS = 90
+GOOGLE_TRENDS_THEMES_PER_PILLAR = 1
+GOOGLE_TRENDS_MIN_DELAY_SECONDS = 4.0
+GOOGLE_TRENDS_MAX_DELAY_SECONDS = 7.0
+GOOGLE_TRENDS_MAX_RETRIES = 3
 YOUTUBE_LIVE_LOOKBACK_HOURS = 36
 LIVE_CACHE = None
 LIVE_CACHE_TTL_SECONDS = 3600
@@ -432,36 +443,133 @@ def gdelt_signal(start_date=None, end_date=None):
     return {"scores": normalize(raw), "topics": topics}
 
 
+def wiki_http_rate_limited(exc):
+    message = str(exc).lower()
+    return "429" in message or "too many requests" in message
+
+
+def load_wiki_cache():
+    try:
+        with open(WIKI_CACHE_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_wiki_cache(cache):
+    tmp = f"{WIKI_CACHE_FILE}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(cache, f)
+    os.replace(tmp, WIKI_CACHE_FILE)
+
+
+def fetch_wiki_articles(url):
+    last_exc = None
+    for attempt in range(WIKI_MAX_RETRIES):
+        try:
+            time.sleep(WIKI_MIN_REQUEST_DELAY_SECONDS)
+            data = read_json_url(url)
+            return data.get("items", [{}])[0].get("articles", [])
+        except Exception as exc:
+            last_exc = exc
+            if wiki_http_rate_limited(exc) and attempt < WIKI_MAX_RETRIES - 1:
+                backoff = (attempt + 1) * 2 + random.uniform(0.5, 1.5)
+                print(f"Wikipedia rate limited, retrying in {backoff:.1f}s...")
+                time.sleep(backoff)
+                continue
+            raise
+    raise last_exc
+
+
+def cached_wiki_articles(cache_key, url, wiki_cache):
+    cached = wiki_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    articles = fetch_wiki_articles(url)
+    wiki_cache[cache_key] = articles
+    save_wiki_cache(wiki_cache)
+    return articles
+
+
+def iter_wiki_month_slices(start_date, end_date):
+    start = parse_iso_date(start_date)
+    end = parse_iso_date(end_date)
+    year, month = start.year, start.month
+
+    while date(year, month, 1) <= end:
+        days_in_month = calendar.monthrange(year, month)[1]
+        month_start = date(year, month, 1)
+        month_end = date(year, month, days_in_month)
+        slice_start = max(start, month_start)
+        slice_end = min(end, month_end)
+        if slice_start <= slice_end:
+            days_in_slice = (slice_end - slice_start).days + 1
+            yield year, month, days_in_slice / days_in_month
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+
+
+def accumulate_wiki_articles(raw, candidates, articles, weight):
+    for page in articles:
+        title = page.get("article", "")
+        if title == "Main_Page" or title.startswith("Special:"):
+            continue
+        pillar = classify(title)
+        if not pillar:
+            continue
+        views = page.get("views", 0)
+        weighted_views = views * weight
+        raw[pillar] += math.log10(weighted_views + 1)
+        readable_title = title.replace("_", " ")
+        current = candidates[pillar].setdefault(title, {
+            "name": readable_title,
+            "views": 0,
+            "url": f"https://en.wikipedia.org/wiki/{title}",
+            "keywords": matched_keywords(title, pillar),
+        })
+        current["views"] += weighted_views
+
+
 def wiki_signal(start_date, end_date=None):
     raw, topics = blank_raw(), empty_topics()
     end_date = end_date or start_date
-    start_utc, end_utc = central_range_bounds(start_date, end_date)
+    start = parse_iso_date(start_date)
+    end = parse_iso_date(end_date)
+    range_days = (end - start).days + 1
     today_utc = datetime.now(UTC).date()
     candidates = {pillar: {} for pillar in PILLARS}
+    wiki_cache = load_wiki_cache()
 
-    for utc_day, weight in iter_utc_date_weights(start_utc, end_utc):
-        if utc_day > today_utc:
-            continue
-        url = f"{WIKI_TOP_BASE}/{utc_day:%Y/%m/%d}"
-        data = read_json_url(url)
-        for page in data.get("items", [{}])[0].get("articles", []):
-            title = page.get("article", "")
-            if title == "Main_Page" or title.startswith("Special:"):
+    if range_days <= WIKI_DAILY_MAX_RANGE_DAYS:
+        start_utc, end_utc = central_range_bounds(start_date, end_date)
+        for utc_day, weight in iter_utc_date_weights(start_utc, end_utc):
+            if utc_day > today_utc:
                 continue
-            pillar = classify(title)
-            if not pillar:
+            cache_key = utc_day.isoformat()
+            url = f"{WIKI_TOP_BASE}/{utc_day:%Y/%m/%d}"
+            try:
+                articles = cached_wiki_articles(cache_key, url, wiki_cache)
+                accumulate_wiki_articles(raw, candidates, articles, weight)
+            except Exception as exc:
+                print(f"Wikipedia unavailable for {utc_day}: {exc}")
+    else:
+        for year, month, weight in iter_wiki_month_slices(start_date, end_date):
+            if date(year, month, 1) > today_utc:
                 continue
-            views = page.get("views", 0)
-            weighted_views = views * weight
-            raw[pillar] += math.log10(weighted_views + 1)
-            readable_title = title.replace("_", " ")
-            current = candidates[pillar].setdefault(title, {
-                "name": readable_title,
-                "views": 0,
-                "url": f"https://en.wikipedia.org/wiki/{title}",
-                "keywords": matched_keywords(title, pillar),
-            })
-            current["views"] += weighted_views
+            cache_key = f"{year}-{month:02d}-all-days"
+            url = f"{WIKI_TOP_BASE}/{year}/{month:02d}/all-days"
+            try:
+                articles = cached_wiki_articles(cache_key, url, wiki_cache)
+                accumulate_wiki_articles(raw, candidates, articles, weight)
+            except Exception as exc:
+                print(f"Wikipedia unavailable for {year}-{month:02d}: {exc}")
+
+    if not any(candidates[pillar] for pillar in PILLARS):
+        raise RuntimeError("Wikipedia returned no pageview data for this date window")
 
     for pillar in PILLARS:
         top = sorted(candidates[pillar].values(), key=lambda item: item["views"], reverse=True)[:5]
@@ -481,84 +589,187 @@ def wiki_signal(start_date, end_date=None):
         ]
     return {"scores": normalize(raw), "topics": topics}
 
+def historical_trends_configs():
+  """One primary theme per pillar keeps historical fetches to six API calls."""
+  per_pillar = {}
+  selected = []
+  for config in GOOGLE_TRENDS_THEMES:
+    pillar = config["pillar"]
+    if per_pillar.get(pillar, 0) >= GOOGLE_TRENDS_THEMES_PER_PILLAR:
+      continue
+    selected.append(config)
+    per_pillar[pillar] = per_pillar.get(pillar, 0) + 1
+  return selected
+
+
+def google_trends_timeframe(start_date, end_date):
+  start = parse_iso_date(start_date)
+  end = parse_iso_date(end_date)
+  baseline_start = start - timedelta(days=GOOGLE_TRENDS_BASELINE_DAYS)
+  return f"{baseline_start.isoformat()} {end.isoformat()}"
+
+
+def google_trends_cache_key(theme, start_date, end_date):
+  return f"{theme}|{start_date}|{end_date}"
+
+
+def load_google_trends_cache():
+  try:
+    with open(GOOGLE_TRENDS_CACHE_FILE, "r") as f:
+      return json.load(f)
+  except Exception:
+    return {}
+
+
+def save_google_trends_cache(cache):
+  tmp = f"{GOOGLE_TRENDS_CACHE_FILE}.tmp"
+  with open(tmp, "w") as f:
+    json.dump(cache, f)
+  os.replace(tmp, GOOGLE_TRENDS_CACHE_FILE)
+
+
+def trends_rate_limited(exc):
+  message = str(exc).lower()
+  return "429" in message or "too many requests" in message or "rate limit" in message
+
+
+def fetch_trends_interest(pytrends, keywords, timeframe):
+  last_exc = None
+  for attempt in range(GOOGLE_TRENDS_MAX_RETRIES):
+    try:
+      pytrends.build_payload(keywords, timeframe=timeframe, geo="US")
+      return pytrends.interest_over_time()
+    except Exception as exc:
+      last_exc = exc
+      if trends_rate_limited(exc) and attempt < GOOGLE_TRENDS_MAX_RETRIES - 1:
+        backoff = (attempt + 1) * 12 + random.uniform(2.0, 5.0)
+        print(f"Google Trends rate limited, retrying in {backoff:.1f}s...")
+        time.sleep(backoff)
+        continue
+      raise
+  raise last_exc
+
+
+def score_trends_theme(data, keywords, weights, start_date, end_date):
+  if data.empty:
+    return None
+
+  if "isPartial" in data.columns:
+    data = data.drop(columns=["isPartial"])
+
+  weighted_score = sum(
+    data[keyword] * weights[keyword]
+    for keyword in keywords
+  ) / sum(weights.values())
+
+  start = parse_iso_date(start_date)
+  end = parse_iso_date(end_date)
+  baseline_end = start - timedelta(days=1)
+  baseline_start = baseline_end - timedelta(days=GOOGLE_TRENDS_BASELINE_DAYS)
+
+  window_mask = (weighted_score.index.date >= start) & (weighted_score.index.date <= end)
+  baseline_mask = (
+    (weighted_score.index.date >= baseline_start)
+    & (weighted_score.index.date <= baseline_end)
+  )
+
+  window_series = weighted_score[window_mask] if window_mask.any() else weighted_score.tail(1)
+  baseline_mean = float(weighted_score[baseline_mask].mean()) if baseline_mask.any() else float(weighted_score.mean()) or 1
+  window_mean = float(window_series.mean())
+  normalized_value = window_mean / baseline_mean if baseline_mean else 0
+
+  peak_date = window_series.idxmax()
+  top_keywords = (
+    data.loc[peak_date]
+    .sort_values(ascending=False)
+    .head(3)
+    .index
+    .tolist()
+  )
+
+  return {
+    "score": normalized_value,
+    "closest_date": peak_date.isoformat(),
+    "top_keywords": top_keywords,
+  }
+
+
+def fetch_trend_theme_row(pytrends, config, start_date, end_date, trends_cache):
+    pillar = config["pillar"]
+    theme = config["theme"]
+    keywords = list(config["keywords"].keys())
+    weights = config["keywords"]
+    cache_key = google_trends_cache_key(theme, start_date, end_date)
+
+    cached = trends_cache.get(cache_key)
+    if cached:
+        if cached.get("error"):
+            return None
+        return {
+            "pillar": pillar,
+            "theme": theme,
+            **cached,
+        }
+
+    timeframe = google_trends_timeframe(start_date, end_date)
+    try:
+        data = fetch_trends_interest(pytrends, keywords, timeframe)
+        scored = score_trends_theme(data, keywords, weights, start_date, end_date)
+        if not scored:
+            return None
+
+        trends_cache[cache_key] = scored
+        save_google_trends_cache(trends_cache)
+        return {"pillar": pillar, "theme": theme, **scored}
+    except Exception as exc:
+        trends_cache[cache_key] = {
+            "error": str(exc),
+            "failed_at": datetime.now(UTC).isoformat(),
+        }
+        save_google_trends_cache(trends_cache)
+        raise
+
+
 def google_trends_signal(start_date=None, end_date=None):
     """
     Google Trends historical signal.
 
-    Returns the same structure as gdelt_signal() and wiki_signal():
-    {
-        "scores": {pillar: score},
-        "topics": {pillar: [...]}
-    }
+    Fetches one theme per pillar for the selected date window only, with
+    per-theme disk caching and retry/backoff on rate limits.
     """
+    start_date = start_date or date.today().isoformat()
+    end_date = end_date or start_date
+
     pytrends = TrendReq(hl="en-US", tz=360)
+    trends_cache = load_google_trends_cache()
 
     raw = blank_raw()
     topics = empty_topics()
     theme_rows = []
+    rate_limit_hit = False
 
-    target_date = parse_iso_date(end_date or start_date or date.today().isoformat())
-
-    for config in GOOGLE_TRENDS_THEMES:
+    for config in historical_trends_configs():
         pillar = config["pillar"]
         theme = config["theme"]
-        keywords = list(config["keywords"].keys())
-        weights = config["keywords"]
-        time.sleep(random.uniform(2.0, 4.0))
+        if rate_limit_hit:
+            delay = GOOGLE_TRENDS_MAX_DELAY_SECONDS + random.uniform(3.0, 6.0)
+        else:
+            delay = random.uniform(GOOGLE_TRENDS_MIN_DELAY_SECONDS, GOOGLE_TRENDS_MAX_DELAY_SECONDS)
+        time.sleep(delay)
 
         try:
-            pytrends.build_payload(
-                keywords,
-                timeframe="today 12-m",
-                geo="US"
-            )
-
-            data = pytrends.interest_over_time()
-
-            if data.empty:
+            row = fetch_trend_theme_row(pytrends, config, start_date, end_date, trends_cache)
+            if not row:
                 continue
-
-            if "isPartial" in data.columns:
-                data = data.drop(columns=["isPartial"])
-
-            weighted_score = sum(
-                data[keyword] * weights[keyword]
-                for keyword in keywords
-            ) / sum(weights.values())
-
-            theme_avg = weighted_score.mean() or 1
-            normalized_series = weighted_score / theme_avg
-
-            closest_date = min(
-                normalized_series.index,
-                key=lambda d: abs(d.date() - target_date)
-            )
-
-            normalized_value = float(normalized_series.loc[closest_date])
-            raw[pillar] += normalized_value
-
-            top_keywords = (
-                data.loc[closest_date]
-                .sort_values(ascending=False)
-                .head(3)
-                .index
-                .tolist()
-            )
-
-            theme_rows.append({
-                "pillar": pillar,
-                "theme": theme,
-                "score": normalized_value,
-                "closest_date": closest_date,
-                "top_keywords": top_keywords,
-            })
-
+            raw[pillar] += row["score"]
+            theme_rows.append(row)
         except Exception as exc:
+            if trends_rate_limited(exc):
+                rate_limit_hit = True
             print(f"Google Trends unavailable for {pillar} → {theme}: {exc}")
             continue
 
     theme_counts = {pillar: 0 for pillar in PILLARS}
-
     for row in theme_rows:
         theme_counts[row["pillar"]] += 1
 
@@ -567,12 +778,13 @@ def google_trends_signal(start_date=None, end_date=None):
             raw[pillar] = raw[pillar] / theme_counts[pillar]
 
     scores = normalize(raw)
+    window_label = start_date if start_date == end_date else f"{start_date} to {end_date}"
 
     for pillar in PILLARS:
         top = sorted(
             [row for row in theme_rows if row["pillar"] == pillar],
             key=lambda row: row["score"],
-            reverse=True
+            reverse=True,
         )[:5]
 
         topics[pillar] = [
@@ -582,11 +794,12 @@ def google_trends_signal(start_date=None, end_date=None):
                 "source": "Google Trends",
                 "url": "",
                 "description": (
-                    f"Google Trends theme signal for {row['theme']} "
-                    f"during the week of {row['closest_date'].date()}."
+                    f"Google Trends theme signal for {row['theme']} during {window_label}."
                 ),
                 "signalType": "Search interest",
-                "sourceDetail": "Google Trends normalized against each theme's 12-month average.",
+                "sourceDetail": (
+                    f"Google Trends compared to the prior {GOOGLE_TRENDS_BASELINE_DAYS}-day baseline."
+                ),
                 "why": (
                     f"Ranked because {row['theme']} was "
                     f"{row['score']:.1f}x its normal Google search baseline."
@@ -969,7 +1182,9 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         window_info = resolve_historical_window(window, date_str, start_date, end_date)
         cache_key = f"{window_info['start']}:{window_info['end']}"
         if cache is not None and cache_key in cache:
-            return normalize_result(cache[cache_key])
+            cached = cache[cache_key]
+            if not any("unavailable" in warning.lower() for warning in cached.get("warnings", [])):
+                return normalize_result(cached)
         if cache is not None and window_info["start"] == window_info["end"] and window_info["start"] in cache:
             cached = normalize_result(cache[window_info["start"]])
             cached["window"] = window_info
@@ -1042,7 +1257,7 @@ def pulse(mode, date_str, window="day", start_date=None, end_date=None):
         "window": window_info,
     }
 
-    if cache is not None:
+    if cache is not None and not any("unavailable" in warning.lower() for warning in warnings):
         cache[cache_key] = result
         save_cache(cache)
     elif mode == "live":

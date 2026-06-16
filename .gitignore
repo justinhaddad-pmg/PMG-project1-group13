@@ -8,6 +8,8 @@ US_youtube_trending_data.csv.zip
 US_youtube_trending_data.zip
 historical_data.json
 youtube_live_cache.json
+google_trends_cache.json
+wikipedia_cache.json
 
 # Python
 __pycache__/
