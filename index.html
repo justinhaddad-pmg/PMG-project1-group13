@@ -73,7 +73,7 @@
     }
 
     .api-banner {
-      width: 100%; max-width: 900px;
+      width: 110%; max-width: 900px;
       background: rgba(78, 58, 41, 0.78);
       border: 1px solid rgba(222, 202, 172, 0.22);
       border-radius: 8px;
@@ -693,19 +693,6 @@
     <h1>The Cultural Pulse</h1>
     <p class="subtitle">What's dominating the national conversation — powered by search curiosity, Wikipedia attention, and video momentum</p>
   </header>
-
-  <!-- API key banner -->
-  <div class="api-banner" id="apiBanner">
-    <span class="banner-icon">🔑</span>
-    <span class="banner-text">
-      Enter your free <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3 key</a> to add live video momentum.
-      Historical search and Wikipedia signals work without a key.
-    </span>
-    <div class="api-key-form">
-      <input type="text" id="apiKeyInput" placeholder="AIza..." autocomplete="off" spellcheck="false">
-      <button id="apiKeyBtn">Load Live Data</button>
-    </div>
-  </div>
 
   <div class="control-panel">
     <!-- Mode toggle -->
@@ -1879,7 +1866,8 @@ async function loadLocalConfig() {
 
 function restoreApiKey() {
   if (!apiKey) apiKey = localStorage.getItem('yt_api_key') || '';
-  if (apiKey) document.getElementById('apiBanner').classList.add('hidden');
+  const apiBanner = document.getElementById('apiBanner');
+  if (apiKey && apiBanner) apiBanner.classList.add('hidden');
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1888,20 +1876,30 @@ function restoreApiKey() {
 function initApiKey(key) {
   apiKey = key.trim();
   localStorage.setItem('yt_api_key', apiKey);
-  document.getElementById('apiBanner').classList.add('hidden');
+  const apiBanner = document.getElementById('apiBanner');
+  if (apiBanner) apiBanner.classList.add('hidden');
   fetchLivePulse({ force: !youtubePaused });
 }
 
-document.getElementById('apiKeyBtn').addEventListener('click', () => {
-  const val = document.getElementById('apiKeyInput').value;
-  if (val.trim()) initApiKey(val);
-});
-document.getElementById('apiKeyInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const val = document.getElementById('apiKeyInput').value;
+const apiKeyBtn = document.getElementById('apiKeyBtn');
+const apiKeyInput = document.getElementById('apiKeyInput');
+
+if (apiKeyBtn) {
+  apiKeyBtn.addEventListener('click', () => {
+    if (!apiKeyInput) return;
+    const val = apiKeyInput.value;
     if (val.trim()) initApiKey(val);
-  }
-});
+  });
+}
+
+if (apiKeyInput) {
+  apiKeyInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const val = apiKeyInput.value;
+      if (val.trim()) initApiKey(val);
+    }
+  });
+}
 
 document.getElementById('pauseYoutubeInput').addEventListener('change', e => {
   youtubePaused = e.target.checked;
